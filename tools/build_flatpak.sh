@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+MANIFEST="$ROOT_DIR/flatpak/ca.richyoung.flutter_servo_browser.yml"
+EXAMPLE_DIR="$ROOT_DIR/packages/flutter_servo/example"
+BUILD_DIR="$EXAMPLE_DIR/build/flatpak"
+REPO_DIR="$EXAMPLE_DIR/build/flatpak-repo"
+BUNDLE_PATH="$EXAMPLE_DIR/build/ca.richyoung.flutter_servo_browser.flatpak"
+APP_ID="ca.richyoung.flutter_servo_browser"
+FLATPAK_BUILDER_ARGS=(--disable-rofiles-fuse --force-clean)
+
+if ! command -v flatpak-builder >/dev/null 2>&1; then
+  if command -v dnf >/dev/null 2>&1; then
+    echo "flatpak-builder not found. Install: sudo dnf install -y flatpak flatpak-builder" >&2
+  else
+    echo "flatpak-builder not found. Install: sudo apt-get install flatpak flatpak-builder" >&2
+  fi
+  exit 1
+fi
+
+if ! command -v flutter >/dev/null 2>&1; then
+  echo "flutter not found in PATH." >&2
+  exit 1
+fi
+
+flutter build linux --release --project-dir "$EXAMPLE_DIR"
+
+if [[ ! -f "$EXAMPLE_DIR/build/linux/x64/release/bundle/flutter_servo_example" ]]; then
+  echo "Expected binary missing: packages/flutter_servo/example/build/linux/x64/release/bundle/flutter_servo_example" >&2
+  exit 1
+fi
+
+if [[ "${CI:-}" == "true" || "${GITHUB_ACTIONS:-}" == "true" ]]; then
+  if flatpak-builder --help 2>/dev/null | grep -q -- '--disable-sandbox'; then
+    FLATPAK_BUILDER_ARGS+=(--disable-sandbox)
+  elif command -v podman >/dev/null 2>&1 || command -v docker >/dev/null 2>&1; then
+    echo "flatpak-builder does not support --disable-sandbox; falling back to container build." >&2
+    exec "$ROOT_DIR/tools/build_flatpak_container.sh"
+  else
+    echo "flatpak-builder lacks --disable-sandbox and no container engine found." >&2
+    echo "Install podman/docker, or upgrade flatpak-builder." >&2
+  fi
+fi
+
+flatpak-builder "${FLATPAK_BUILDER_ARGS[@]}" "$BUILD_DIR" "$MANIFEST"
+flatpak-builder "${FLATPAK_BUILDER_ARGS[@]}" --repo="$REPO_DIR" "$BUILD_DIR" "$MANIFEST"
+flatpak build-bundle "$REPO_DIR" "$BUNDLE_PATH" "$APP_ID"
+
+echo "Flatpak bundle created: $BUNDLE_PATH"
+echo "Install with: flatpak install --user --reinstall $BUNDLE_PATH"

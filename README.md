@@ -1,0 +1,51 @@
+# Flutter Servo Browser
+
+Linux-first Flutter + Servo embedding experiment.
+
+## Current State
+
+This repository currently contains:
+
+- `packages/flutter_servo/`: reusable Flutter package and Linux plugin
+- `packages/flutter_servo/example/`: demo app consuming the package
+- `rust/`: shared Rust crate exposed via `flutter_rust_bridge`
+- `packages/flutter_servo/rust_builder/`: `cargokit`-based Rust build package
+- planning docs for the first embedded Servo MVP
+
+The current demo shows a package-owned Linux native texture surface inside the
+example app. That native surface is still a demo renderer, but the pixel data
+now comes from the Rust library rather than being painted directly in the Linux
+plugin.
+
+## Commands
+
+Generate bridge bindings:
+
+```bash
+./tools/rebuild_rust_bridge.sh
+```
+
+Run the example app:
+
+```bash
+cd packages/flutter_servo/example
+flutter run -d linux
+```
+
+Build the Rust library directly:
+
+```bash
+cargo build --release --manifest-path rust/Cargo.toml
+```
+
+## Layout
+
+```text
+packages/flutter_servo/              Reusable package + Linux plugin
+packages/flutter_servo/example/      Demo application
+packages/flutter_servo/lib/src/rust/ Generated flutter_rust_bridge Dart bindings
+packages/flutter_servo/rust_builder/ Native Rust build package
+rust/                               Rust crate
+tools/                              Local helper scripts
+docs/                               Planning notes
+```

@@ -1,0 +1,763 @@
+use std::ffi::{c_void, CStr};
+use std::os::raw::c_char;
+use std::slice;
+
+const BYTES_PER_PIXEL: usize = 4;
+#[cfg(not(feature = "servo-engine"))]
+const ALPHA: u8 = 255;
+
+#[cfg(feature = "servo-engine")]
+mod imp {
+    use std::cell::{Cell, RefCell};
+    use std::ptr::null_mut;
+    use std::rc::Rc;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    };
+    use std::time::{Duration, Instant};
+
+    use dpi::PhysicalSize;
+    use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+    use servo::{
+        EventLoopWaker, LoadStatus, Preferences, RenderingContext, RgbaImage, Servo,
+        ServoBuilder, SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate,
+    };
+    use url::Url;
+
+    use super::{c_char, c_string, c_void, slice, BYTES_PER_PIXEL};
+
+    const DEFAULT_HTML: &str = r#"<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <style>
+      :root {
+        color-scheme: light;
+        font-family: sans-serif;
+      }
+
+      body {
+        margin: 0;
+        padding: 32px;
+        background: linear-gradient(180deg, #f6f8f4 0%, #ecefe7 100%);
+        color: #1f2a1d;
+      }
+
+      main {
+        max-width: 720px;
+      }
+
+      h1 {
+        margin: 0 0 12px;
+        font-size: 36px;
+      }
+
+      p {
+        margin: 0 0 16px;
+        line-height: 1.5;
+      }
+
+      input {
+        width: min(420px, 100%);
+        padding: 12px 14px;
+        border: 1px solid #b8c1b0;
+        border-radius: 10px;
+        font: inherit;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Hello from Servo</h1>
+      <p>Real Servo content rendered inside Flutter on Linux.</p>
+      <p>Select this text once input and pointer forwarding land.</p>
+      <input value="Servo form control placeholder" />
+    </main>
+  </body>
+</html>
+"#;
+
+    #[derive(Clone)]
+    enum SessionContent {
+        Url(Url),
+        Html(String),
+    }
+
+    #[derive(Clone)]
+    struct SessionWaker(Arc<AtomicBool>);
+
+    impl EventLoopWaker for SessionWaker {
+        fn clone_box(&self) -> Box<dyn EventLoopWaker> {
+            Box::new(self.clone())
+        }
+
+        fn wake(&self) {
+            self.0.store(true, Ordering::Relaxed);
+        }
+    }
+
+    #[derive(Default)]
+    struct SessionDelegate {
+        load_complete: Cell<bool>,
+        frame_ready: Cell<bool>,
+    }
+
+    impl SessionDelegate {
+        fn begin_navigation(&self) {
+            self.load_complete.set(false);
+            self.frame_ready.set(false);
+        }
+
+        fn mark_frame_dirty(&self) {
+            self.frame_ready.set(false);
+        }
+
+        fn is_scene_ready(&self) -> bool {
+            self.load_complete.get() && self.frame_ready.get()
+        }
+    }
+
+    impl WebViewDelegate for SessionDelegate {
+        fn notify_new_frame_ready(&self, webview: WebView) {
+            eprintln!("flutter_servo: rust delegate new frame ready");
+            self.frame_ready.set(true);
+            webview.paint();
+        }
+
+        fn notify_load_status_changed(&self, _webview: WebView, status: LoadStatus) {
+            eprintln!("flutter_servo: rust delegate load status {status:?}");
+            if status == LoadStatus::Complete {
+                self.load_complete.set(true);
+            }
+        }
+    }
+
+    pub(super) struct ServoRenderSession {
+        webview: WebView,
+        rendering_context: Rc<SoftwareRenderingContext>,
+        servo: Servo,
+        delegate: Rc<SessionDelegate>,
+        content: SessionContent,
+        pending_navigation: bool,
+        size: PhysicalSize<u32>,
+    }
+
+    impl ServoRenderSession {
+        fn new() -> Result<Self, String> {
+            eprintln!("flutter_servo: rust session new start");
+            let size = PhysicalSize::new(800, 600);
+            eprintln!("flutter_servo: rust session creating software rendering context");
+            let rendering_context = Rc::new(
+                SoftwareRenderingContext::new(size)
+                    .map_err(|error| format!("software rendering init failed: {error:?}"))?,
+            );
+            eprintln!("flutter_servo: rust session making rendering context current");
+            rendering_context
+                .make_current()
+                .map_err(|error| format!("software rendering activation failed: {error:?}"))?;
+
+            let mut preferences = Preferences::default();
+            preferences.network_http_proxy_uri = String::new();
+            preferences.network_https_proxy_uri = String::new();
+
+            eprintln!("flutter_servo: rust session building Servo");
+            let servo = ServoBuilder::default()
+                .preferences(preferences)
+                .event_loop_waker(Box::new(SessionWaker(Arc::new(AtomicBool::new(false)))))
+                .build();
+
+            eprintln!("flutter_servo: rust session creating WebView");
+            let delegate = Rc::new(SessionDelegate::default());
+            delegate.begin_navigation();
+            let webview = WebViewBuilder::new(&servo, rendering_context.clone())
+                .delegate(delegate.clone())
+                .url(data_url_for_html(DEFAULT_HTML)?)
+                .build();
+            eprintln!("flutter_servo: rust session created WebView");
+
+            Ok(Self {
+                webview,
+                rendering_context,
+                servo,
+                delegate,
+                content: SessionContent::Html(DEFAULT_HTML.to_owned()),
+                pending_navigation: false,
+                size,
+            })
+        }
+
+        fn set_url(&mut self, url: &str) -> bool {
+            let Ok(url) = Url::parse(url) else {
+                return false;
+            };
+            self.content = SessionContent::Url(url);
+            self.pending_navigation = true;
+            true
+        }
+
+        fn set_html(&mut self, html: &str) -> bool {
+            self.content = SessionContent::Html(html.to_owned());
+            self.pending_navigation = true;
+            true
+        }
+
+        fn render_rgba(
+            &mut self,
+            width: u32,
+            height: u32,
+            out_rgba: *mut u8,
+            out_len: usize,
+        ) -> bool {
+            let width = width.max(1);
+            let height = height.max(1);
+            eprintln!("flutter_servo: rust render start {width}x{height}");
+            let expected_len = width as usize * height as usize * BYTES_PER_PIXEL;
+            if out_rgba.is_null() || out_len < expected_len {
+                eprintln!("flutter_servo: rust render rejected buffer");
+                return false;
+            }
+
+            if !self.prepare_for_render(width, height) {
+                eprintln!("flutter_servo: rust render prepare failed");
+                return false;
+            }
+
+            let screenshot = Rc::new(RefCell::new(None));
+            let callback_state = screenshot.clone();
+            eprintln!("flutter_servo: rust render requesting screenshot");
+            self.webview.take_screenshot(None, move |result| {
+                eprintln!("flutter_servo: rust screenshot callback fired");
+                *callback_state.borrow_mut() = Some(result);
+            });
+
+            if !self.spin_until(Duration::from_secs(15), || screenshot.borrow().is_some()) {
+                eprintln!("flutter_servo: rust render screenshot wait timed out");
+                return false;
+            }
+
+            let Some(result) = screenshot.borrow_mut().take() else {
+                eprintln!("flutter_servo: rust render missing screenshot result");
+                return false;
+            };
+            let Ok(image) = result else {
+                eprintln!("flutter_servo: rust render screenshot returned error");
+                return false;
+            };
+
+            copy_image_into_buffer(&image, width, height, unsafe {
+                slice::from_raw_parts_mut(out_rgba, expected_len)
+            })
+        }
+
+        fn prepare_for_render(&mut self, width: u32, height: u32) -> bool {
+            if self.rendering_context.make_current().is_err() {
+                eprintln!("flutter_servo: rust render failed to make context current");
+                return false;
+            }
+
+            let requested_size = PhysicalSize::new(width, height);
+            if self.size != requested_size {
+                eprintln!("flutter_servo: rust render resizing webview to {width}x{height}");
+                self.webview.resize(requested_size);
+                self.delegate.mark_frame_dirty();
+                self.size = requested_size;
+            }
+
+            if self.pending_navigation {
+                let Ok(url) = self.current_url() else {
+                    eprintln!("flutter_servo: rust render failed to resolve content URL");
+                    return false;
+                };
+                eprintln!("flutter_servo: rust render loading pending content");
+                self.delegate.begin_navigation();
+                self.webview.load(url);
+                self.pending_navigation = false;
+            }
+
+            if !self.delegate.is_scene_ready() {
+                eprintln!("flutter_servo: rust render waiting for scene readiness");
+                if !self.spin_until(Duration::from_secs(15), || self.delegate.is_scene_ready()) {
+                    eprintln!("flutter_servo: rust render scene readiness timed out");
+                    return false;
+                }
+            }
+
+            true
+        }
+
+        fn current_url(&self) -> Result<Url, String> {
+            match &self.content {
+                SessionContent::Url(url) => Ok(url.clone()),
+                SessionContent::Html(html) => data_url_for_html(html),
+            }
+        }
+
+        fn spin_until(&self, timeout: Duration, done: impl Fn() -> bool) -> bool {
+            let start = Instant::now();
+            while !done() {
+                if start.elapsed() >= timeout {
+                    eprintln!("flutter_servo: rust spin_until timed out after {timeout:?}");
+                    return false;
+                }
+                self.servo.spin_event_loop();
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            true
+        }
+    }
+
+    fn copy_image_into_buffer(
+        image: &RgbaImage,
+        width: u32,
+        height: u32,
+        out_rgba: &mut [u8],
+    ) -> bool {
+        if image.width() != width || image.height() != height {
+            return false;
+        }
+
+        let raw = image.as_raw();
+        if raw.len() != out_rgba.len() {
+            return false;
+        }
+
+        out_rgba.copy_from_slice(raw);
+        true
+    }
+
+    fn data_url_for_html(html: &str) -> Result<Url, String> {
+        Url::parse(&format!(
+            "data:text/html;charset=utf-8,{}",
+            utf8_percent_encode(html, NON_ALPHANUMERIC)
+        ))
+        .map_err(|error| format!("html data URL parse failed: {error}"))
+    }
+
+    #[no_mangle]
+    pub extern "C" fn flutter_servo_session_new() -> *mut c_void {
+        eprintln!("flutter_servo: ffi session_new invoked");
+        match std::panic::catch_unwind(ServoRenderSession::new) {
+            Ok(Ok(session)) => {
+                eprintln!("flutter_servo: ffi session_new success");
+                Box::into_raw(Box::new(session)).cast()
+            }
+            Ok(Err(error)) => {
+                eprintln!("flutter_servo: ffi session_new error: {error}");
+                null_mut()
+            }
+            Err(_) => {
+                eprintln!("flutter_servo: ffi session_new panicked");
+                null_mut()
+            }
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_free(session: *mut c_void) {
+        if !session.is_null() {
+            drop(Box::from_raw(session.cast::<ServoRenderSession>()));
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_set_url(
+        session: *mut c_void,
+        url: *const c_char,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
+            return false;
+        };
+        let Some(url) = c_string(url) else {
+            return false;
+        };
+        session.set_url(url)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_set_html(
+        session: *mut c_void,
+        html: *const c_char,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
+            return false;
+        };
+        let Some(html) = c_string(html) else {
+            return false;
+        };
+        session.set_html(html)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_render_rgba(
+        session: *mut c_void,
+        width: u32,
+        height: u32,
+        out_rgba: *mut u8,
+        out_len: usize,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
+            return false;
+        };
+        session.render_rgba(width, height, out_rgba, out_len)
+    }
+}
+
+#[cfg(not(feature = "servo-engine"))]
+mod imp {
+    use super::{c_char, c_string, c_void, slice, ALPHA, BYTES_PER_PIXEL};
+
+    enum DemoContent {
+        Url(String),
+        Html(String),
+    }
+
+    struct DemoSession {
+        content: DemoContent,
+    }
+
+    #[no_mangle]
+    pub extern "C" fn flutter_servo_session_new() -> *mut c_void {
+        Box::into_raw(Box::new(DemoSession {
+            content: DemoContent::Url(
+                "data:text/html;charset=utf-8,<html><body><h1>Hello from Servo</h1><p>Rendered inside Flutter.</p></body></html>"
+                    .to_owned(),
+            ),
+        })) as *mut c_void
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_free(session: *mut c_void) {
+        if !session.is_null() {
+            drop(Box::from_raw(session.cast::<DemoSession>()));
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_set_url(
+        session: *mut c_void,
+        url: *const c_char,
+    ) -> bool {
+        let Some(session) = session.cast::<DemoSession>().as_mut() else {
+            return false;
+        };
+        let Some(url) = c_string(url) else {
+            return false;
+        };
+
+        session.content = DemoContent::Url(url.to_owned());
+        true
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_set_html(
+        session: *mut c_void,
+        html: *const c_char,
+    ) -> bool {
+        let Some(session) = session.cast::<DemoSession>().as_mut() else {
+            return false;
+        };
+        let Some(html) = c_string(html) else {
+            return false;
+        };
+
+        session.content = DemoContent::Html(html.to_owned());
+        true
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_render_rgba(
+        session: *const c_void,
+        width: u32,
+        height: u32,
+        out_rgba: *mut u8,
+        out_len: usize,
+    ) -> bool {
+        let Some(session) = session.cast::<DemoSession>().as_ref() else {
+            return false;
+        };
+
+        let width = width.max(1);
+        let height = height.max(1);
+        let expected_len = width as usize * height as usize * BYTES_PER_PIXEL;
+        if out_rgba.is_null() || out_len < expected_len {
+            return false;
+        }
+
+        let buffer = slice::from_raw_parts_mut(out_rgba, expected_len);
+        paint_demo_frame(session, width, height, buffer);
+        true
+    }
+
+    fn paint_demo_frame(session: &DemoSession, width: u32, height: u32, buffer: &mut [u8]) {
+        let (content_kind, content) = match &session.content {
+            DemoContent::Url(value) => ("URL", value.as_str()),
+            DemoContent::Html(value) => ("HTML", value.as_str()),
+        };
+
+        let hash = hash_seed(content);
+        let accent_r = 48 + (hash & 0x3f) as u8;
+        let accent_g = 110 + ((hash >> 8) & 0x4f) as u8;
+        let accent_b = 120 + ((hash >> 16) & 0x5f) as u8;
+
+        for y in 0..height {
+            for x in 0..width {
+                let yf = if height > 1 {
+                    y as f32 / (height - 1) as f32
+                } else {
+                    0.0
+                };
+                let xf = if width > 1 {
+                    x as f32 / (width - 1) as f32
+                } else {
+                    0.0
+                };
+
+                let r = (250.0 - yf * 18.0 - xf * 4.0).round() as u8;
+                let g = (247.0 - yf * 10.0 + xf * 4.0).round() as u8;
+                let b = (241.0 - yf * 6.0 + xf * 8.0).round() as u8;
+                write_pixel(buffer, width, x, y, r, g, b);
+            }
+        }
+
+        let toolbar_height = 56u32.max(height / 9);
+        fill_rect(
+            buffer,
+            width,
+            height,
+            0,
+            0,
+            width,
+            toolbar_height,
+            [230, 233, 229],
+        );
+
+        let badge_x = 16;
+        let badge_y = toolbar_height / 4;
+        let badge_width = 64u32.min(width.saturating_sub(32));
+        let badge_color = if matches!(session.content, DemoContent::Html(_)) {
+            [44, 116, 92]
+        } else {
+            [32, 97, 163]
+        };
+        fill_rect(
+            buffer,
+            width,
+            height,
+            badge_x,
+            badge_y,
+            badge_width,
+            24,
+            badge_color,
+        );
+
+        let address_x = 24u32.max(width / 8);
+        let address_y = toolbar_height / 4;
+        let address_width = width.saturating_sub(address_x * 2).min(width * 3 / 4);
+        let address_height = 28u32.max(toolbar_height / 2);
+        fill_rect(
+            buffer,
+            width,
+            height,
+            address_x,
+            address_y,
+            address_width,
+            address_height,
+            [246, 247, 245],
+        );
+        let address_hash = hash_seed(content_kind);
+        draw_token_stripes(
+            buffer,
+            width,
+            height,
+            content,
+            address_x + 12,
+            address_y + 8,
+            address_width.saturating_sub(24),
+            12,
+            [
+                90 + (address_hash & 0x3f) as u8,
+                120 + ((address_hash >> 8) & 0x2f) as u8,
+                110 + ((address_hash >> 16) & 0x2f) as u8,
+            ],
+        );
+
+        let hero_margin = 36u32.max(width / 18);
+        let hero_y = toolbar_height + 28u32.max(height / 24);
+        let hero_height = 84u32.max(height / 5);
+        fill_rect(
+            buffer,
+            width,
+            height,
+            hero_margin,
+            hero_y,
+            width.saturating_sub(hero_margin * 2),
+            hero_height,
+            [accent_r, accent_g, accent_b],
+        );
+
+        let subhero_y = hero_y + 18;
+        let subhero_width = width.saturating_sub(hero_margin * 2 + 40);
+        draw_token_stripes(
+            buffer,
+            width,
+            height,
+            content,
+            hero_margin + 20,
+            subhero_y,
+            subhero_width,
+            14,
+            [245, 247, 244],
+        );
+
+        let card_y = hero_y + hero_height + 24u32.max(height / 32);
+        let card_width = width.saturating_sub(hero_margin * 2);
+        let card_height = 160u32.max(height.saturating_sub(card_y + 32u32.max(height / 28)));
+        fill_rect(
+            buffer,
+            width,
+            height,
+            hero_margin,
+            card_y,
+            card_width,
+            card_height,
+            [255, 255, 255],
+        );
+
+        let article_text = match &session.content {
+            DemoContent::Url(url) => url.as_str(),
+            DemoContent::Html(html) => extract_html_text(html),
+        };
+        let line_x = hero_margin + 18u32.max(width / 48);
+        let mut line_y = card_y + 22u32.max(height / 40);
+        let max_line_width = card_width.saturating_sub(36u32.max(width / 20));
+        for line_width in derive_line_widths(article_text, max_line_width, 8) {
+            fill_rect(
+                buffer,
+                width,
+                height,
+                line_x,
+                line_y,
+                line_width,
+                12,
+                [213, 218, 214],
+            );
+            line_y = line_y.saturating_add(26);
+            if line_y.saturating_add(12) >= card_y.saturating_add(card_height) {
+                break;
+            }
+        }
+    }
+
+    fn draw_token_stripes(
+        buffer: &mut [u8],
+        frame_width: u32,
+        frame_height: u32,
+        content: &str,
+        x: u32,
+        y: u32,
+        available_width: u32,
+        stripe_height: u32,
+        rgb: [u8; 3],
+    ) {
+        if available_width == 0 {
+            return;
+        }
+
+        let widths = derive_line_widths(content, available_width, 5);
+        let mut cursor_x = x;
+        for width in widths {
+            fill_rect(
+                buffer,
+                frame_width,
+                frame_height,
+                cursor_x,
+                y,
+                width.min(available_width.saturating_sub(cursor_x.saturating_sub(x))),
+                stripe_height,
+                rgb,
+            );
+            cursor_x = cursor_x.saturating_add(width + 8);
+            if cursor_x >= x.saturating_add(available_width) {
+                break;
+            }
+        }
+    }
+
+    fn derive_line_widths(content: &str, max_width: u32, max_lines: usize) -> Vec<u32> {
+        let mut result = Vec::with_capacity(max_lines);
+        let safe_width = max_width.max(72);
+        for (index, token) in tokenize(content).into_iter().take(max_lines).enumerate() {
+            let base = 48 + ((token.len() as u32 * 9) % safe_width.max(49));
+            let width = base.min(safe_width);
+            result.push(if index % 3 == 2 {
+                width.saturating_sub(24).max(64)
+            } else {
+                width.max(64)
+            });
+        }
+        if result.is_empty() {
+            result.push((safe_width * 3 / 4).max(96));
+        }
+        result
+    }
+
+    fn tokenize(content: &str) -> Vec<String> {
+        content
+            .split(|char: char| !char.is_alphanumeric())
+            .filter(|part| !part.is_empty())
+            .map(ToOwned::to_owned)
+            .collect()
+    }
+
+    fn extract_html_text(html: &str) -> &str {
+        if let Some(body_start) = html.find("<body") {
+            return &html[body_start..];
+        }
+        html
+    }
+
+    fn hash_seed(seed: &str) -> u32 {
+        let mut value = 2166136261u32;
+        for byte in seed.bytes() {
+            value ^= byte as u32;
+            value = value.wrapping_mul(16777619);
+        }
+        value
+    }
+
+    fn write_pixel(buffer: &mut [u8], width: u32, x: u32, y: u32, r: u8, g: u8, b: u8) {
+        let index = ((y * width + x) as usize) * BYTES_PER_PIXEL;
+        buffer[index] = r;
+        buffer[index + 1] = g;
+        buffer[index + 2] = b;
+        buffer[index + 3] = ALPHA;
+    }
+
+    fn fill_rect(
+        buffer: &mut [u8],
+        frame_width: u32,
+        frame_height: u32,
+        x: u32,
+        y: u32,
+        width: u32,
+        height: u32,
+        rgb: [u8; 3],
+    ) {
+        let max_x = (x + width).min(frame_width);
+        let max_y = (y + height).min(frame_height);
+        for yy in y..max_y {
+            for xx in x..max_x {
+                write_pixel(buffer, frame_width, xx, yy, rgb[0], rgb[1], rgb[2]);
+            }
+        }
+    }
+}
+
+fn c_string<'a>(ptr: *const c_char) -> Option<&'a str> {
+    if ptr.is_null() {
+        return None;
+    }
+
+    unsafe { CStr::from_ptr(ptr).to_str().ok() }
+}

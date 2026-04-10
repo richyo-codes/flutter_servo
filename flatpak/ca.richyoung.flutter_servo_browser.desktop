@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Flutter Servo Browser
+Exec=flutter_servo_example
+Categories=Network;WebBrowser;
+StartupNotify=true
