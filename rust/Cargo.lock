@@ -2099,9 +2099,9 @@ checksum = "0cc23270f6e1808e30a928bdc84dea0b9b4136a8bc82338574f23baf47bbd280"
 
 [[package]]
 name = "glow"
-version = "0.16.0"
+version = "0.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c5e5ea60d70410161c8bf5da3fdfeaa1c72ed2c15f8bbb9d19fe3a4fad085f08"
+checksum = "29038e1c483364cc6bb3cf78feee1816002e127c331a1eec55a4d202b9e1adb5"
 dependencies = [
  "js-sys",
  "slotmap",
@@ -5193,9 +5193,9 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "sea-query"
-version = "1.0.0-rc.32"
+version = "1.0.0-rc.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e504013549f817509224b39f2381da6b6e18e48cb7144a24ea13b6f22089e76c"
+checksum = "58decdaaaf2a698170af2fa1b2e8f7b43a970e7768bf18aebaab113bada46354"
 dependencies = [
  "inherent",
  "sea-query-derive",
@@ -5265,7 +5265,7 @@ dependencies = [
 [[package]]
 name = "selectors"
 version = "0.37.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "bitflags 2.11.0",
  "cssparser",
@@ -6661,7 +6661,7 @@ dependencies = [
 [[package]]
 name = "servo_arc"
 version = "0.4.3"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "serde",
  "stable_deref_trait",
@@ -6919,7 +6919,7 @@ dependencies = [
 [[package]]
 name = "stylo"
 version = "0.16.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "app_units",
  "arrayvec",
@@ -6975,7 +6975,7 @@ dependencies = [
 [[package]]
 name = "stylo_atoms"
 version = "0.16.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "string_cache",
  "string_cache_codegen",
@@ -6984,7 +6984,7 @@ dependencies = [
 [[package]]
 name = "stylo_derive"
 version = "0.16.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -6996,7 +6996,7 @@ dependencies = [
 [[package]]
 name = "stylo_dom"
 version = "0.16.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "bitflags 2.11.0",
  "stylo_malloc_size_of",
@@ -7005,7 +7005,7 @@ dependencies = [
 [[package]]
 name = "stylo_malloc_size_of"
 version = "0.16.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "app_units",
  "cssparser",
@@ -7022,12 +7022,12 @@ dependencies = [
 [[package]]
 name = "stylo_static_prefs"
 version = "0.16.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 
 [[package]]
 name = "stylo_traits"
 version = "0.16.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "app_units",
  "bitflags 2.11.0",
@@ -7053,7 +7053,9 @@ checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
 
 [[package]]
 name = "surfman"
-version = "0.11.0"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8fd46f11e3e56616d97db5ab0ba5ed53b215851afeef341657f0f6087d6c946e"
 dependencies = [
  "bitflags 2.11.0",
  "cfg_aliases",
@@ -7368,7 +7370,7 @@ checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 [[package]]
 name = "to_shmem"
 version = "0.3.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "cssparser",
  "servo_arc",
@@ -7381,7 +7383,7 @@ dependencies = [
 [[package]]
 name = "to_shmem_derive"
 version = "0.1.0"
-source = "git+https://github.com/servo/stylo?rev=ddf2109bdfff62c83a14e3a3c7dc1c6130653283#ddf2109bdfff62c83a14e3a3c7dc1c6130653283"
+source = "git+https://github.com/servo/stylo?rev=96ceb5405bd7ce10c4141c62e860d50745a75547#96ceb5405bd7ce10c4141c62e860d50745a75547"
 dependencies = [
  "darling",
  "proc-macro2",
@@ -8970,3 +8972,7 @@ checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core 0.5.1",
 ]
+
+[[patch.unused]]
+name = "surfman"
+version = "0.11.0"
