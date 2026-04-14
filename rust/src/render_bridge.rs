@@ -20,8 +20,11 @@ mod imp {
     use dpi::PhysicalSize;
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
     use servo::{
-        EventLoopWaker, LoadStatus, Preferences, RenderingContext, RgbaImage, Servo,
-        ServoBuilder, SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate,
+        DevicePoint, EventLoopWaker, InputEvent, Key, KeyState, LoadStatus, MouseButton,
+        MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent, MouseMoveEvent, NamedKey,
+        Preferences, RenderingContext, RgbaImage, Scroll, Servo, ServoBuilder,
+        SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate, WheelDelta,
+        WheelEvent, WheelMode,
     };
     use url::Url;
 
@@ -202,6 +205,50 @@ mod imp {
             true
         }
 
+        fn send_mouse_move(&self, x: i32, y: i32) -> bool {
+            self.webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
+                DevicePoint::new(x as f64, y as f64).into(),
+            )));
+            true
+        }
+
+        fn send_mouse_button(&self, x: i32, y: i32, button: MouseButton, action: MouseButtonAction) -> bool {
+            let point = DevicePoint::new(x as f64, y as f64).into();
+            self.webview
+                .notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point)));
+            self.webview
+                .notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(action, button, point)));
+            true
+        }
+
+        fn send_mouse_leave_viewport(&self) -> bool {
+            self.webview
+                .notify_input_event(InputEvent::MouseLeftViewport(MouseLeftViewportEvent::default()));
+            true
+        }
+
+        fn send_mouse_wheel(&self, x: i32, y: i32, delta_x: i32, delta_y: i32) -> bool {
+            self.webview.notify_input_event(InputEvent::Wheel(WheelEvent::new(
+                WheelDelta {
+                    x: delta_x as f64,
+                    y: delta_y as f64,
+                    z: 0.0,
+                    mode: WheelMode::DeltaPixel,
+                },
+                DevicePoint::new(x as f64, y as f64).into(),
+            )));
+            true
+        }
+
+        fn send_keyboard_event(&self, key_label: &str, character: &str, key_state: KeyState) -> bool {
+            let key = key_from_flutter_key(key_label, character);
+            self.webview
+                .notify_input_event(InputEvent::Keyboard(servo::KeyboardEvent::from_state_and_key(
+                    key_state, key,
+                )));
+            true
+        }
+
         fn render_rgba(
             &mut self,
             width: u32,
@@ -334,6 +381,41 @@ mod imp {
         .map_err(|error| format!("html data URL parse failed: {error}"))
     }
 
+    fn key_from_flutter_key(key_label: &str, character: &str) -> Key {
+        if !character.is_empty() {
+            return Key::Character(character.into());
+        }
+
+        let normalized = key_label
+            .trim()
+            .to_ascii_lowercase()
+            .replace([' ', '_', '-'], "");
+
+        match normalized.as_str() {
+            "backspace" => Key::Named(NamedKey::Backspace),
+            "tab" => Key::Named(NamedKey::Tab),
+            "enter" | "numpadenter" => Key::Named(NamedKey::Enter),
+            "escape" | "esc" => Key::Named(NamedKey::Escape),
+            "space" | "spacebar" => Key::Named(NamedKey::Space),
+            "arrowleft" | "leftarrow" => Key::Named(NamedKey::ArrowLeft),
+            "arrowright" | "rightarrow" => Key::Named(NamedKey::ArrowRight),
+            "arrowup" | "uparrow" => Key::Named(NamedKey::ArrowUp),
+            "arrowdown" | "downarrow" => Key::Named(NamedKey::ArrowDown),
+            "delete" | "del" => Key::Named(NamedKey::Delete),
+            "insert" | "ins" => Key::Named(NamedKey::Insert),
+            "home" => Key::Named(NamedKey::Home),
+            "end" => Key::Named(NamedKey::End),
+            "pageup" => Key::Named(NamedKey::PageUp),
+            "pagedown" => Key::Named(NamedKey::PageDown),
+            "shift" | "shiftleft" | "shiftright" => Key::Named(NamedKey::Shift),
+            "control" | "ctrl" | "controlleft" | "controlright" => Key::Named(NamedKey::Control),
+            "alt" | "altleft" | "altright" => Key::Named(NamedKey::Alt),
+            "meta" | "super" | "metaleft" | "metaright" => Key::Named(NamedKey::Meta),
+            _ if key_label.chars().count() == 1 => Key::Character(key_label.into()),
+            _ => Key::Named(NamedKey::Unidentified),
+        }
+    }
+
     #[no_mangle]
     pub extern "C" fn flutter_servo_session_new() -> *mut c_void {
         eprintln!("flutter_servo: ffi session_new invoked");
@@ -386,6 +468,91 @@ mod imp {
             return false;
         };
         session.set_html(html)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_move(
+        session: *mut c_void,
+        x: i32,
+        y: i32,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        session.send_mouse_move(x, y)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_button(
+        session: *mut c_void,
+        x: i32,
+        y: i32,
+        button: u8,
+        is_down: bool,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        let button = match button {
+            0 => MouseButton::Left,
+            1 => MouseButton::Middle,
+            2 => MouseButton::Right,
+            3 => MouseButton::Back,
+            4 => MouseButton::Forward,
+            value => MouseButton::Other(value as u16),
+        };
+        let action = if is_down {
+            MouseButtonAction::Down
+        } else {
+            MouseButtonAction::Up
+        };
+        session.send_mouse_button(x, y, button, action)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_leave_viewport(
+        session: *mut c_void,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        session.send_mouse_leave_viewport()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_wheel(
+        session: *mut c_void,
+        x: i32,
+        y: i32,
+        delta_x: i32,
+        delta_y: i32,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        session.send_mouse_wheel(x, y, delta_x, delta_y)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_key_event(
+        session: *mut c_void,
+        key_label: *const c_char,
+        character: *const c_char,
+        is_down: bool,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        let Some(key_label) = c_string(key_label) else {
+            return false;
+        };
+        let character = c_string(character).unwrap_or("");
+        let key_state = if is_down {
+            KeyState::Down
+        } else {
+            KeyState::Up
+        };
+        session.send_keyboard_event(key_label, character, key_state)
     }
 
     #[no_mangle]
@@ -463,6 +630,54 @@ mod imp {
 
         session.content = DemoContent::Html(html.to_owned());
         true
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_move(
+        session: *mut c_void,
+        _x: i32,
+        _y: i32,
+    ) -> bool {
+        !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_button(
+        session: *mut c_void,
+        _x: i32,
+        _y: i32,
+        _button: u8,
+        _is_down: bool,
+    ) -> bool {
+        !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_leave_viewport(
+        session: *mut c_void,
+    ) -> bool {
+        !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_mouse_wheel(
+        session: *mut c_void,
+        _x: i32,
+        _y: i32,
+        _delta_x: i32,
+        _delta_y: i32,
+    ) -> bool {
+        !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_notify_key_event(
+        session: *mut c_void,
+        _key_label: *const c_char,
+        _character: *const c_char,
+        _is_down: bool,
+    ) -> bool {
+        !session.is_null()
     }
 
     #[no_mangle]
