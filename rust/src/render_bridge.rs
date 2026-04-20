@@ -138,10 +138,10 @@ mod imp {
     }
 
     pub(super) struct ServoRenderSession {
-        rendering_context: Rc<SoftwareRenderingContext>,
-        servo: Servo,
+        rendering_context: Option<Rc<SoftwareRenderingContext>>,
+        servo: Option<Servo>,
         delegate: Rc<SessionDelegate>,
-        webview: WebView,
+        webview: Option<WebView>,
         content: SessionContent,
         pending_navigation: bool,
         size: PhysicalSize<u32>,
@@ -181,10 +181,10 @@ mod imp {
             eprintln!("flutter_servo: rust session created WebView");
 
             Ok(Self {
-                rendering_context,
-                servo,
+                rendering_context: Some(rendering_context),
+                servo: Some(servo),
                 delegate,
-                webview,
+                webview: Some(webview),
                 content: SessionContent::Html(DEFAULT_HTML.to_owned()),
                 pending_navigation: false,
                 size,
@@ -207,55 +207,84 @@ mod imp {
         }
 
         fn send_mouse_move(&self, x: i32, y: i32) -> bool {
-            self.webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
-                DevicePoint::new(x as f32, y as f32).into(),
-            )));
-            true
+            self.webview
+                .as_ref()
+                .map(|webview| {
+                    webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
+                        DevicePoint::new(x as f32, y as f32).into(),
+                    )));
+                    true
+                })
+                .unwrap_or(false)
         }
 
         fn send_mouse_button(&self, x: i32, y: i32, button: MouseButton, action: MouseButtonAction) -> bool {
             let point = DevicePoint::new(x as f32, y as f32).into();
             self.webview
-                .notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point)));
-            self.webview
-                .notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(action, button, point)));
-            true
+                .as_ref()
+                .map(|webview| {
+                    webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point)));
+                    webview.notify_input_event(InputEvent::MouseButton(MouseButtonEvent::new(
+                        action, button, point,
+                    )));
+                    true
+                })
+                .unwrap_or(false)
         }
 
         fn send_mouse_leave_viewport(&self) -> bool {
             self.webview
-                .notify_input_event(InputEvent::MouseLeftViewport(MouseLeftViewportEvent::default()));
-            true
+                .as_ref()
+                .map(|webview| {
+                    webview.notify_input_event(InputEvent::MouseLeftViewport(
+                        MouseLeftViewportEvent::default(),
+                    ));
+                    true
+                })
+                .unwrap_or(false)
         }
 
         fn send_mouse_wheel(&self, x: i32, y: i32, delta_x: i32, delta_y: i32) -> bool {
-            self.webview.notify_input_event(InputEvent::Wheel(WheelEvent::new(
-                WheelDelta {
-                    x: delta_x as f64,
-                    y: delta_y as f64,
-                    z: 0.0,
-                    mode: WheelMode::DeltaPixel,
-                },
-                DevicePoint::new(x as f32, y as f32).into(),
-            )));
-            true
+            self.webview
+                .as_ref()
+                .map(|webview| {
+                    webview.notify_input_event(InputEvent::Wheel(WheelEvent::new(
+                        WheelDelta {
+                            x: delta_x as f64,
+                            y: delta_y as f64,
+                            z: 0.0,
+                            mode: WheelMode::DeltaPixel,
+                        },
+                        DevicePoint::new(x as f32, y as f32).into(),
+                    )));
+                    true
+                })
+                .unwrap_or(false)
         }
 
         fn send_keyboard_event(&self, key_label: &str, character: &str, key_state: KeyState) -> bool {
             let key = key_from_flutter_key(key_label, character);
             self.webview
-                .notify_input_event(InputEvent::Keyboard(servo::KeyboardEvent::from_state_and_key(
-                    key_state, key,
-                )));
-            true
+                .as_ref()
+                .map(|webview| {
+                    webview.notify_input_event(InputEvent::Keyboard(
+                        servo::KeyboardEvent::from_state_and_key(key_state, key),
+                    ));
+                    true
+                })
+                .unwrap_or(false)
         }
 
         fn focus_webview(&self) {
-            self.webview.focus();
+            if let Some(webview) = self.webview.as_ref() {
+                webview.focus();
+            }
         }
 
         fn blur_webview(&self) {
-            self.webview.blur();
+            if let Some(webview) = self.webview.as_ref() {
+                webview.blur();
+            }
         }
 
         fn render_rgba(
@@ -280,14 +309,23 @@ mod imp {
             }
 
             eprintln!("flutter_servo: rust render painting webview");
-            self.webview.paint();
+            if let Some(webview) = self.webview.as_ref() {
+                webview.paint();
+            } else {
+                eprintln!("flutter_servo: rust render missing webview");
+                return false;
+            }
 
             let source_rectangle = DeviceIntRect::from_origin_and_size(
                 DeviceIntPoint::zero(),
                 DeviceIntSize::new(width as i32, height as i32),
             );
             eprintln!("flutter_servo: rust render reading framebuffer");
-            let Some(image) = self.rendering_context.read_to_image(source_rectangle) else {
+            let Some(rendering_context) = self.rendering_context.as_ref() else {
+                eprintln!("flutter_servo: rust render missing rendering context");
+                return false;
+            };
+            let Some(image) = rendering_context.read_to_image(source_rectangle) else {
                 eprintln!("flutter_servo: rust render framebuffer read failed");
                 return false;
             };
@@ -298,7 +336,12 @@ mod imp {
         }
 
         fn prepare_for_render(&mut self, width: u32, height: u32) -> bool {
-            if self.rendering_context.make_current().is_err() {
+            let Some(rendering_context) = self.rendering_context.as_ref() else {
+                eprintln!("flutter_servo: rust render missing rendering context");
+                return false;
+            };
+
+            if rendering_context.make_current().is_err() {
                 eprintln!("flutter_servo: rust render failed to make context current");
                 return false;
             }
@@ -306,7 +349,12 @@ mod imp {
             let requested_size = PhysicalSize::new(width, height);
             if self.size != requested_size {
                 eprintln!("flutter_servo: rust render resizing webview to {width}x{height}");
-                self.webview.resize(requested_size);
+                if let Some(webview) = self.webview.as_ref() {
+                    webview.resize(requested_size);
+                } else {
+                    eprintln!("flutter_servo: rust render missing webview for resize");
+                    return false;
+                }
                 self.delegate.mark_frame_dirty();
                 self.size = requested_size;
             }
@@ -318,7 +366,12 @@ mod imp {
                 };
                 eprintln!("flutter_servo: rust render loading pending content");
                 self.delegate.begin_navigation();
-                self.webview.load(url);
+                if let Some(webview) = self.webview.as_ref() {
+                    webview.load(url);
+                } else {
+                    eprintln!("flutter_servo: rust render missing webview for navigation");
+                    return false;
+                }
                 self.pending_navigation = false;
             }
 
@@ -347,10 +400,22 @@ mod imp {
                     eprintln!("flutter_servo: rust spin_until timed out after {timeout:?}");
                     return false;
                 }
-                self.servo.spin_event_loop();
+                if let Some(servo) = self.servo.as_ref() {
+                    servo.spin_event_loop();
+                } else {
+                    return false;
+                }
                 std::thread::sleep(Duration::from_millis(1));
             }
             true
+        }
+    }
+
+    impl Drop for ServoRenderSession {
+        fn drop(&mut self) {
+            let _ = self.webview.take();
+            let _ = self.servo.take();
+            let _ = self.rendering_context.take();
         }
     }
 
