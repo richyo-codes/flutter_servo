@@ -267,19 +267,74 @@ class _ServoSurfaceCard extends StatelessWidget {
     final textTheme = Theme.of(context).textTheme;
     final fallback = DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F6F1),
         borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF6EFE1), Color(0xFFE8E1D3)],
+        ),
+        border: Border.all(color: const Color(0xFFCFBFA5)),
       ),
       child: Padding(
         padding: const EdgeInsets.all(18),
-        child: SingleChildScrollView(
-          child: SelectableText(
-            html,
-            style: textTheme.bodyMedium?.copyWith(
-              fontFamily: 'monospace',
-              color: const Color(0xFF243331),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DecoratedBox(
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E2E2A),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Text(
+                  'FLUTTER PREVIEW',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: 14),
+            Text(
+              'This is the fallback renderer.',
+              style: textTheme.titleMedium?.copyWith(
+                color: const Color(0xFF1E2E2A),
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'It stays active until you press Load, then the native Servo surface takes over.',
+              style: textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF5E6B67),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F5EE),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFD8CCB8)),
+                ),
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(16),
+                  child: SelectableText(
+                    html,
+                    style: textTheme.bodyMedium?.copyWith(
+                      fontFamily: 'monospace',
+                      color: const Color(0xFF243331),
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -317,7 +372,7 @@ class _ServoSurfaceCard extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               content.trim().isEmpty
-                  ? 'Press Load to start the native renderer.'
+                  ? 'Showing the Flutter fallback preview until you load a target.'
                   : 'Native rendering requested.',
               style: textTheme.bodySmall?.copyWith(
                 color: const Color(0xFFAAC4BD),
