@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -35,14 +37,24 @@ class FlutterServoSurface extends StatefulWidget {
 
 class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   static const MethodChannel _channel = MethodChannel('flutter_servo');
+  static const Duration _deferredRefreshDelay = Duration(milliseconds: 16);
 
+  final FocusNode _focusNode = FocusNode(debugLabel: 'flutter_servo_surface');
   int? _textureId;
   Size? _logicalSize;
   double? _devicePixelRatio;
   bool _syncQueued = false;
+  bool _deferredRefreshQueued = false;
   bool _contentUpdateInFlight = false;
   String? _lastRenderedContent;
   FlutterServoContentType? _lastRenderedContentType;
+  int? _activeMouseButton;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
 
   @override
   void didUpdateWidget(covariant FlutterServoSurface oldWidget) {
@@ -50,7 +62,35 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     if (oldWidget.content != widget.content ||
         oldWidget.contentType != widget.contentType) {
       _scheduleTextureSync();
+      _requestFocusAfterUpdate();
+      _queueDeferredTextureRefresh();
     }
+  }
+
+  void _requestFocusAfterUpdate() {
+    if (widget.content.trim().isEmpty) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _focusNode.requestFocus();
+      }
+    });
+  }
+
+  void _queueDeferredTextureRefresh() {
+    if (_deferredRefreshQueued) {
+      return;
+    }
+
+    _deferredRefreshQueued = true;
+    Timer(_deferredRefreshDelay, () {
+      _deferredRefreshQueued = false;
+      if (mounted) {
+        _scheduleTextureSync();
+      }
+    });
   }
 
   void _scheduleTextureSync() {
@@ -122,6 +162,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             _contentUpdateInFlight = false;
             if (mounted) {
               _scheduleTextureSync();
+              _requestFocusAfterUpdate();
+              _queueDeferredTextureRefresh();
             }
           }
         }
@@ -134,6 +176,80 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         });
       }
     });
+  }
+
+  Future<void> _sendMouseMove(Offset position) {
+    final devicePoint = _toDevicePoint(position);
+    _queueDeferredTextureRefresh();
+    return _channel.invokeMethod<void>('notifyMouseMove', devicePoint);
+  }
+
+  Future<void> _sendMouseButton(Offset position, int button, bool isDown) {
+    final devicePoint = _toDevicePoint(position);
+    _queueDeferredTextureRefresh();
+    return _channel.invokeMethod<void>('notifyMouseButton', [
+      devicePoint[0],
+      devicePoint[1],
+      button,
+      isDown,
+    ]);
+  }
+
+  int _mapMouseButtonsToServoButton(int buttons) {
+    if (buttons == kPrimaryButton) {
+      return 0;
+    }
+    if (buttons == kMiddleMouseButton) {
+      return 1;
+    }
+    if (buttons == kSecondaryButton) {
+      return 2;
+    }
+    if (buttons == kBackMouseButton) {
+      return 3;
+    }
+    if (buttons == kForwardMouseButton) {
+      return 4;
+    }
+    return 0;
+  }
+
+  Future<void> _sendMouseLeave() {
+    _queueDeferredTextureRefresh();
+    return _channel.invokeMethod<void>('notifyMouseLeaveViewport');
+  }
+
+  Future<void> _sendMouseWheel(Offset position, Offset delta) {
+    final devicePoint = _toDevicePoint(position);
+    _queueDeferredTextureRefresh();
+    return _channel.invokeMethod<void>('notifyMouseWheel', [
+      devicePoint[0],
+      devicePoint[1],
+      delta.dx.round(),
+      delta.dy.round(),
+    ]);
+  }
+
+  Future<void> _sendKeyEvent(KeyEvent event) {
+    final isDown = event is KeyDownEvent;
+    if (!isDown && event is! KeyUpEvent) {
+      return Future<void>.value();
+    }
+
+    _queueDeferredTextureRefresh();
+    return _channel.invokeMethod<void>('notifyKeyEvent', [
+      event.logicalKey.keyLabel,
+      event.character ?? '',
+      isDown,
+    ]);
+  }
+
+  List<int> _toDevicePoint(Offset position) {
+    final devicePixelRatio = _devicePixelRatio ?? 1.0;
+    return [
+      (position.dx * devicePixelRatio).round(),
+      (position.dy * devicePixelRatio).round(),
+    ];
   }
 
   @override
@@ -150,13 +266,54 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         _devicePixelRatio = devicePixelRatio;
         _scheduleTextureSync();
 
-        if (_textureId == null) {
-          return widget.fallback;
-        }
+        final child = _textureId == null
+            ? widget.fallback
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Texture(textureId: _textureId!),
+              );
 
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: Texture(textureId: _textureId!),
+        return Focus(
+          focusNode: _focusNode,
+          onKeyEvent: (node, event) {
+            unawaited(_sendKeyEvent(event));
+            return KeyEventResult.handled;
+          },
+          child: MouseRegion(
+            onEnter: (_) => _focusNode.requestFocus(),
+            onHover: (event) => unawaited(_sendMouseMove(event.position)),
+            onExit: (_) => unawaited(_sendMouseLeave()),
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: (event) {
+                _focusNode.requestFocus();
+                _activeMouseButton = _mapMouseButtonsToServoButton(
+                  event.buttons,
+                );
+                unawaited(
+                  _sendMouseButton(event.position, _activeMouseButton!, true),
+                );
+              },
+              onPointerMove: (event) =>
+                  unawaited(_sendMouseMove(event.position)),
+              onPointerUp: (event) {
+                unawaited(
+                  _sendMouseButton(
+                    event.position,
+                    _activeMouseButton ?? 0,
+                    false,
+                  ),
+                );
+                _activeMouseButton = null;
+              },
+              onPointerSignal: (event) {
+                if (event is PointerScrollEvent) {
+                  unawaited(_sendMouseWheel(event.position, event.scrollDelta));
+                }
+              },
+              child: child,
+            ),
+          ),
         );
       },
     );
