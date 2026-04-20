@@ -49,9 +49,7 @@ impl ServoCompileSpike {
             .make_current()
             .map_err(|error| format!("software rendering context activation failed: {error:?}"))?;
 
-        let mut preferences = Preferences::default();
-        preferences.network_http_proxy_uri = String::new();
-        preferences.network_https_proxy_uri = String::new();
+        let preferences = Preferences::default();
 
         let servo = ServoBuilder::default()
             .preferences(preferences)

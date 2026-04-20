@@ -88,6 +88,13 @@ mod imp {
         Html(String),
     }
 
+    #[derive(Default)]
+    struct ProxyOverrides {
+        http_proxy_uri: Option<String>,
+        https_proxy_uri: Option<String>,
+        no_proxy: Option<String>,
+    }
+
     #[derive(Clone)]
     struct SessionWaker(Arc<AtomicBool>);
 
@@ -148,7 +155,7 @@ mod imp {
     }
 
     impl ServoRenderSession {
-        fn new() -> Result<Self, String> {
+        fn new(proxy_overrides: ProxyOverrides) -> Result<Self, String> {
             eprintln!("flutter_servo: rust session new start");
             let size = PhysicalSize::new(800, 600);
             eprintln!("flutter_servo: rust session creating software rendering context");
@@ -162,8 +169,15 @@ mod imp {
                 .map_err(|error| format!("software rendering activation failed: {error:?}"))?;
 
             let mut preferences = Preferences::default();
-            preferences.network_http_proxy_uri = String::new();
-            preferences.network_https_proxy_uri = String::new();
+            if let Some(http_proxy_uri) = proxy_overrides.http_proxy_uri {
+                preferences.network_http_proxy_uri = http_proxy_uri;
+            }
+            if let Some(https_proxy_uri) = proxy_overrides.https_proxy_uri {
+                preferences.network_https_proxy_uri = https_proxy_uri;
+            }
+            if let Some(no_proxy) = proxy_overrides.no_proxy {
+                preferences.network_http_no_proxy = no_proxy;
+            }
 
             eprintln!("flutter_servo: rust session building Servo");
             let servo = ServoBuilder::default()
@@ -482,9 +496,23 @@ mod imp {
     }
 
     #[no_mangle]
-    pub extern "C" fn flutter_servo_session_new() -> *mut c_void {
+    fn optional_c_string(ptr: *const c_char) -> Option<String> {
+        c_string(ptr).map(|value| value.to_owned())
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_new(
+        http_proxy_uri: *const c_char,
+        https_proxy_uri: *const c_char,
+        no_proxy: *const c_char,
+    ) -> *mut c_void {
         eprintln!("flutter_servo: ffi session_new invoked");
-        match std::panic::catch_unwind(ServoRenderSession::new) {
+        let proxy_overrides = ProxyOverrides {
+            http_proxy_uri: optional_c_string(http_proxy_uri),
+            https_proxy_uri: optional_c_string(https_proxy_uri),
+            no_proxy: optional_c_string(no_proxy),
+        };
+        match std::panic::catch_unwind(|| ServoRenderSession::new(proxy_overrides)) {
             Ok(Ok(session)) => {
                 eprintln!("flutter_servo: ffi session_new success");
                 Box::into_raw(Box::new(session)).cast()
@@ -667,7 +695,11 @@ mod imp {
     }
 
     #[no_mangle]
-    pub extern "C" fn flutter_servo_session_new() -> *mut c_void {
+    pub extern "C" fn flutter_servo_session_new(
+        _http_proxy_uri: *const c_char,
+        _https_proxy_uri: *const c_char,
+        _no_proxy: *const c_char,
+    ) -> *mut c_void {
         Box::into_raw(Box::new(DemoSession {
             content: DemoContent::Url(
                 "data:text/html;charset=utf-8,<html><body><h1>Hello from Servo</h1><p>Rendered inside Flutter.</p></body></html>"
