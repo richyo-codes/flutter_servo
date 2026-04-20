@@ -45,6 +45,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   double? _devicePixelRatio;
   bool _syncQueued = false;
   bool _deferredRefreshQueued = false;
+  Timer? _deferredRefreshTimer;
   bool _contentUpdateInFlight = false;
   String? _lastRenderedContent;
   FlutterServoContentType? _lastRenderedContentType;
@@ -52,6 +53,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   @override
   void dispose() {
+    _deferredRefreshTimer?.cancel();
     _focusNode.dispose();
     super.dispose();
   }
@@ -75,6 +77,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _focusNode.requestFocus();
+        unawaited(_sendFocusState(true));
       }
     });
   }
@@ -85,12 +88,19 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     }
 
     _deferredRefreshQueued = true;
-    Timer(_deferredRefreshDelay, () {
+    _deferredRefreshTimer?.cancel();
+    _deferredRefreshTimer = Timer(_deferredRefreshDelay, () {
       _deferredRefreshQueued = false;
       if (mounted) {
         _scheduleTextureSync();
       }
     });
+  }
+
+  Future<void> _sendFocusState(bool focused) {
+    return _channel.invokeMethod<void>(
+      focused ? 'focusWebView' : 'blurWebView',
+    );
   }
 
   void _scheduleTextureSync() {
@@ -275,18 +285,23 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
         return Focus(
           focusNode: _focusNode,
+          onFocusChange: (focused) => unawaited(_sendFocusState(focused)),
           onKeyEvent: (node, event) {
             unawaited(_sendKeyEvent(event));
             return KeyEventResult.handled;
           },
           child: MouseRegion(
-            onEnter: (_) => _focusNode.requestFocus(),
+            onEnter: (_) {
+              _focusNode.requestFocus();
+              unawaited(_sendFocusState(true));
+            },
             onHover: (event) => unawaited(_sendMouseMove(event.position)),
             onExit: (_) => unawaited(_sendMouseLeave()),
             child: Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: (event) {
                 _focusNode.requestFocus();
+                unawaited(_sendFocusState(true));
                 _activeMouseButton = _mapMouseButtonsToServoButton(
                   event.buttons,
                 );
