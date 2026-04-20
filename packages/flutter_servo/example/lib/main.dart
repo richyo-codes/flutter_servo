@@ -47,6 +47,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
   final TextEditingController _urlController = TextEditingController();
   String _activeContent = '';
   FlutterServoContentType _activeContentType = FlutterServoContentType.url;
+  static const String _richYoungUrl = 'https://richyoung.ca';
   static const String _autostartMode = String.fromEnvironment(
     'FLUTTER_SERVO_AUTOSTART',
     defaultValue: '',
@@ -95,6 +96,14 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
             break;
         }
       });
+    });
+  }
+
+  void _loadRichYoung() {
+    setState(() {
+      _urlController.text = _richYoungUrl;
+      _activeContent = _richYoungUrl;
+      _activeContentType = FlutterServoContentType.url;
     });
   }
 
@@ -222,14 +231,26 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                 height: isWide ? 0 : 20,
                               ),
                               Expanded(
-                                child: _StatusCard(
-                                  currentUrl: _urlController.text,
-                                  contentMode: _activeContent.isEmpty
-                                      ? 'Idle'
-                                      : _activeContentType ==
-                                            FlutterServoContentType.html
-                                      ? 'HTML'
-                                      : 'URL/Data URL',
+                                child: Column(
+                                  children: [
+                                    _StatusCard(
+                                      currentUrl: _urlController.text,
+                                      contentMode: _activeContent.isEmpty
+                                          ? 'Idle'
+                                          : _activeContentType ==
+                                                FlutterServoContentType.html
+                                          ? 'HTML'
+                                          : 'URL/Data URL',
+                                    ),
+                                    const SizedBox(height: 20),
+                                    _QuickLoadCard(
+                                      title: 'RichYoung.ca',
+                                      subtitle:
+                                          'Load the public site into Servo with one tap.',
+                                      url: _richYoungUrl,
+                                      onTap: _loadRichYoung,
+                                    ),
+                                  ],
                                 ),
                               ),
                             ];
@@ -428,6 +449,78 @@ class _StatusCard extends StatelessWidget {
             Text(
               'The example app now drives a stateful Rust session with URL or HTML content updates.',
               style: textTheme.bodyMedium,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickLoadCard extends StatelessWidget {
+  const _QuickLoadCard({
+    required this.title,
+    required this.subtitle,
+    required this.url,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final String url;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF17312B), Color(0xFF10211D)],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFF28463E)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: textTheme.titleLarge?.copyWith(
+                color: Colors.white,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              subtitle,
+              style: textTheme.bodyMedium?.copyWith(
+                color: const Color(0xFFD8E7E1),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              url,
+              style: textTheme.bodySmall?.copyWith(
+                color: const Color(0xFFA8C6BE),
+                fontFamily: 'monospace',
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: onTap,
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFFF0C66E),
+                  foregroundColor: const Color(0xFF13231F),
+                ),
+                child: const Text('Load Site'),
+              ),
             ),
           ],
         ),
