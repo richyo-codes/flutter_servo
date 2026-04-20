@@ -22,7 +22,7 @@ mod imp {
     use servo::{
         DevicePoint, EventLoopWaker, InputEvent, Key, KeyState, LoadStatus, MouseButton,
         MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent, MouseMoveEvent, NamedKey,
-        Preferences, RenderingContext, RgbaImage, Scroll, Servo, ServoBuilder,
+        Preferences, RenderingContext, RgbaImage, Servo, ServoBuilder,
         SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate, WheelDelta,
         WheelEvent, WheelMode,
     };
@@ -137,10 +137,10 @@ mod imp {
     }
 
     pub(super) struct ServoRenderSession {
-        webview: WebView,
         rendering_context: Rc<SoftwareRenderingContext>,
         servo: Servo,
         delegate: Rc<SessionDelegate>,
+        webview: WebView,
         content: SessionContent,
         pending_navigation: bool,
         size: PhysicalSize<u32>,
@@ -180,10 +180,10 @@ mod imp {
             eprintln!("flutter_servo: rust session created WebView");
 
             Ok(Self {
-                webview,
                 rendering_context,
                 servo,
                 delegate,
+                webview,
                 content: SessionContent::Html(DEFAULT_HTML.to_owned()),
                 pending_navigation: false,
                 size,
@@ -207,13 +207,13 @@ mod imp {
 
         fn send_mouse_move(&self, x: i32, y: i32) -> bool {
             self.webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
-                DevicePoint::new(x as f64, y as f64).into(),
+                DevicePoint::new(x as f32, y as f32).into(),
             )));
             true
         }
 
         fn send_mouse_button(&self, x: i32, y: i32, button: MouseButton, action: MouseButtonAction) -> bool {
-            let point = DevicePoint::new(x as f64, y as f64).into();
+            let point = DevicePoint::new(x as f32, y as f32).into();
             self.webview
                 .notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(point)));
             self.webview
@@ -235,7 +235,7 @@ mod imp {
                     z: 0.0,
                     mode: WheelMode::DeltaPixel,
                 },
-                DevicePoint::new(x as f64, y as f64).into(),
+                DevicePoint::new(x as f32, y as f32).into(),
             )));
             true
         }
@@ -396,7 +396,7 @@ mod imp {
             "tab" => Key::Named(NamedKey::Tab),
             "enter" | "numpadenter" => Key::Named(NamedKey::Enter),
             "escape" | "esc" => Key::Named(NamedKey::Escape),
-            "space" | "spacebar" => Key::Named(NamedKey::Space),
+            "space" | "spacebar" => Key::Character(" ".into()),
             "arrowleft" | "leftarrow" => Key::Named(NamedKey::ArrowLeft),
             "arrowright" | "rightarrow" => Key::Named(NamedKey::ArrowRight),
             "arrowup" | "uparrow" => Key::Named(NamedKey::ArrowUp),
