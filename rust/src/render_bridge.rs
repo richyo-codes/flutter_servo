@@ -8,7 +8,7 @@ const ALPHA: u8 = 255;
 
 #[cfg(feature = "servo-engine")]
 mod imp {
-    use std::cell::{Cell, RefCell};
+    use std::cell::Cell;
     use std::ptr::null_mut;
     use std::rc::Rc;
     use std::sync::{
@@ -27,6 +27,7 @@ mod imp {
         WheelEvent, WheelMode,
     };
     use url::Url;
+    use servo::{DeviceIntPoint, DeviceIntRect, DeviceIntSize};
 
     use super::{c_char, c_string, c_void, slice, BYTES_PER_PIXEL};
 
@@ -249,6 +250,14 @@ mod imp {
             true
         }
 
+        fn focus_webview(&self) {
+            self.webview.focus();
+        }
+
+        fn blur_webview(&self) {
+            self.webview.blur();
+        }
+
         fn render_rgba(
             &mut self,
             width: u32,
@@ -270,25 +279,16 @@ mod imp {
                 return false;
             }
 
-            let screenshot = Rc::new(RefCell::new(None));
-            let callback_state = screenshot.clone();
-            eprintln!("flutter_servo: rust render requesting screenshot");
-            self.webview.take_screenshot(None, move |result| {
-                eprintln!("flutter_servo: rust screenshot callback fired");
-                *callback_state.borrow_mut() = Some(result);
-            });
+            eprintln!("flutter_servo: rust render painting webview");
+            self.webview.paint();
 
-            if !self.spin_until(Duration::from_secs(15), || screenshot.borrow().is_some()) {
-                eprintln!("flutter_servo: rust render screenshot wait timed out");
-                return false;
-            }
-
-            let Some(result) = screenshot.borrow_mut().take() else {
-                eprintln!("flutter_servo: rust render missing screenshot result");
-                return false;
-            };
-            let Ok(image) = result else {
-                eprintln!("flutter_servo: rust render screenshot returned error");
+            let source_rectangle = DeviceIntRect::from_origin_and_size(
+                DeviceIntPoint::zero(),
+                DeviceIntSize::new(width as i32, height as i32),
+            );
+            eprintln!("flutter_servo: rust render reading framebuffer");
+            let Some(image) = self.rendering_context.read_to_image(source_rectangle) else {
+                eprintln!("flutter_servo: rust render framebuffer read failed");
                 return false;
             };
 
@@ -556,6 +556,24 @@ mod imp {
     }
 
     #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_focus_webview(session: *mut c_void) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        session.focus_webview();
+        true
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_blur_webview(session: *mut c_void) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        session.blur_webview();
+        true
+    }
+
+    #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_render_rgba(
         session: *mut c_void,
         width: u32,
@@ -677,6 +695,16 @@ mod imp {
         _character: *const c_char,
         _is_down: bool,
     ) -> bool {
+        !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_focus_webview(session: *mut c_void) -> bool {
+        !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_blur_webview(session: *mut c_void) -> bool {
         !session.is_null()
     }
 
