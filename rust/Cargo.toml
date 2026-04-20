@@ -18,7 +18,7 @@ servo = { path = "/path/to/servo/components/servo", default-features = false, fe
 url = { version = "2.5", optional = true }
 
 [patch.crates-io]
-surfman = { path = "../third_party/surfman" }
+surfman = { path = "/path/to/surfman" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
