@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>ca.richyoung.flutter_servo_browser</id>
+  <id>com.rnd.flutter_servo_browser</id>
   <name>Flutter Servo Browser</name>
   <summary>Flutter and Servo integration experiment</summary>
   <metadata_license>CC0-1.0</metadata_license>
@@ -11,5 +11,5 @@
       Flutter desktop application.
     </p>
   </description>
-  <launchable type="desktop-id">ca.richyoung.flutter_servo_browser.desktop</launchable>
+  <launchable type="desktop-id">com.rnd.flutter_servo_browser.desktop</launchable>
 </component>

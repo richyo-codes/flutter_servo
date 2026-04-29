@@ -1,4 +1,4 @@
-app-id: ca.richyoung.flutter_servo_browser
+app-id: com.rnd.flutter_servo_browser
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
@@ -21,13 +21,13 @@ modules:
       - cp -r bundle/lib /app/lib/
       - cp -r bundle/data /app/share/flutter_servo_browser/
       - install -Dm755 bundle/flutter_servo_example /app/bin/flutter_servo_example
-      - install -Dm644 ca.richyoung.flutter_servo_browser.desktop /app/share/applications/ca.richyoung.flutter_servo_browser.desktop
-      - install -Dm644 ca.richyoung.flutter_servo_browser.metainfo.xml /app/share/metainfo/ca.richyoung.flutter_servo_browser.metainfo.xml
+      - install -Dm644 com.rnd.flutter_servo_browser.desktop /app/share/applications/com.rnd.flutter_servo_browser.desktop
+      - install -Dm644 com.rnd.flutter_servo_browser.metainfo.xml /app/share/metainfo/com.rnd.flutter_servo_browser.metainfo.xml
     sources:
       - type: dir
         path: ../packages/flutter_servo/example/build/linux/x64/release/bundle
         dest: bundle
       - type: file
-        path: ca.richyoung.flutter_servo_browser.desktop
+        path: com.rnd.flutter_servo_browser.desktop
       - type: file
-        path: ca.richyoung.flutter_servo_browser.metainfo.xml
+        path: com.rnd.flutter_servo_browser.metainfo.xml
