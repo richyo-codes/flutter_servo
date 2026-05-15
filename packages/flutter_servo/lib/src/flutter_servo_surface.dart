@@ -19,17 +19,20 @@ class FlutterServoSurface extends StatefulWidget {
     super.key,
     required this.content,
     required this.fallback,
+    this.enableInputPlumbing = true,
   }) : contentType = FlutterServoContentType.url;
 
   const FlutterServoSurface.html({
     super.key,
     required this.content,
     required this.fallback,
+    this.enableInputPlumbing = true,
   }) : contentType = FlutterServoContentType.html;
 
   final FlutterServoContentType contentType;
   final String content;
   final Widget fallback;
+  final bool enableInputPlumbing;
 
   @override
   State<FlutterServoSurface> createState() => _FlutterServoSurfaceState();
@@ -70,7 +73,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   void _requestFocusAfterUpdate() {
-    if (widget.content.trim().isEmpty) {
+    if (!widget.enableInputPlumbing || widget.content.trim().isEmpty) {
       return;
     }
 
@@ -98,6 +101,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   Future<void> _sendFocusState(bool focused) {
+    if (!widget.enableInputPlumbing) {
+      return Future<void>.value();
+    }
+
     return _channel.invokeMethod<void>(
       focused ? 'focusWebView' : 'blurWebView',
     );
@@ -189,12 +196,20 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   Future<void> _sendMouseMove(Offset position) {
+    if (!widget.enableInputPlumbing) {
+      return Future<void>.value();
+    }
+
     final devicePoint = _toDevicePoint(position);
     _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseMove', devicePoint);
   }
 
   Future<void> _sendMouseButton(Offset position, int button, bool isDown) {
+    if (!widget.enableInputPlumbing) {
+      return Future<void>.value();
+    }
+
     final devicePoint = _toDevicePoint(position);
     _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseButton', [
@@ -225,11 +240,19 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   Future<void> _sendMouseLeave() {
+    if (!widget.enableInputPlumbing) {
+      return Future<void>.value();
+    }
+
     _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseLeaveViewport');
   }
 
   Future<void> _sendMouseWheel(Offset position, Offset delta) {
+    if (!widget.enableInputPlumbing) {
+      return Future<void>.value();
+    }
+
     final devicePoint = _toDevicePoint(position);
     _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseWheel', [
@@ -241,6 +264,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   Future<void> _sendKeyEvent(KeyEvent event) {
+    if (!widget.enableInputPlumbing) {
+      return Future<void>.value();
+    }
+
     final isDown = event is KeyDownEvent;
     if (!isDown && event is! KeyUpEvent) {
       return Future<void>.value();
@@ -282,6 +309,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
                 borderRadius: BorderRadius.circular(18),
                 child: Texture(textureId: _textureId!),
               );
+
+        if (!widget.enableInputPlumbing) {
+          return child;
+        }
 
         return Focus(
           focusNode: _focusNode,

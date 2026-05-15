@@ -47,6 +47,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
   final TextEditingController _urlController = TextEditingController();
   String _activeContent = '';
   FlutterServoContentType _activeContentType = FlutterServoContentType.url;
+  bool _nativeInputEnabled = true;
   static const String _richYoungUrl = 'https://richyoung.ca';
   static const String _autostartMode = String.fromEnvironment(
     'FLUTTER_SERVO_AUTOSTART',
@@ -104,6 +105,12 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
       _urlController.text = _richYoungUrl;
       _activeContent = _richYoungUrl;
       _activeContentType = FlutterServoContentType.url;
+    });
+  }
+
+  void _setNativeInputEnabled(bool value) {
+    setState(() {
+      _nativeInputEnabled = value;
     });
   }
 
@@ -166,36 +173,50 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                     ),
                     child: Padding(
                       padding: const EdgeInsets.all(14),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.arrow_back, size: 18),
-                          const SizedBox(width: 10),
-                          const Icon(Icons.arrow_forward, size: 18),
-                          const SizedBox(width: 10),
-                          const Icon(Icons.refresh, size: 18),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: TextField(
-                              controller: _urlController,
-                              decoration: const InputDecoration(
-                                isDense: true,
-                                border: OutlineInputBorder(),
-                                hintText:
-                                    'https://example.com, data:text/html,..., or raw <html>...',
+                      child: Listener(
+                        behavior: HitTestBehavior.translucent,
+                        onPointerDown: (_) {
+                          debugPrint('flutter_servo: toolbar pointer down');
+                        },
+                        child: Row(
+                          children: [
+                            const Icon(Icons.arrow_back, size: 18),
+                            const SizedBox(width: 10),
+                            const Icon(Icons.arrow_forward, size: 18),
+                            const SizedBox(width: 10),
+                            const Icon(Icons.refresh, size: 18),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: TextField(
+                                controller: _urlController,
+                                onTap: () {
+                                  debugPrint('flutter_servo: url field tapped');
+                                },
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  border: OutlineInputBorder(),
+                                  hintText:
+                                      'https://example.com, data:text/html,..., or raw <html>...',
+                                ),
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          FilledButton(
-                            onPressed: () => setState(() {
-                              _activeContent = _urlController.text;
-                              _activeContentType = _isHtmlInput
-                                  ? FlutterServoContentType.html
-                                  : FlutterServoContentType.url;
-                            }),
-                            child: const Text('Load'),
-                          ),
-                        ],
+                            const SizedBox(width: 12),
+                            FilledButton(
+                              onPressed: () {
+                                debugPrint(
+                                  'flutter_servo: load button pressed',
+                                );
+                                setState(() {
+                                  _activeContent = _urlController.text;
+                                  _activeContentType = _isHtmlInput
+                                      ? FlutterServoContentType.html
+                                      : FlutterServoContentType.url;
+                                });
+                              },
+                              child: const Text('Load'),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -224,6 +245,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                   useHtmlContent:
                                       _activeContentType ==
                                       FlutterServoContentType.html,
+                                  enableInputPlumbing: _nativeInputEnabled,
                                 ),
                               ),
                               SizedBox(
@@ -241,6 +263,11 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                                 FlutterServoContentType.html
                                           ? 'HTML'
                                           : 'URL/Data URL',
+                                    ),
+                                    const SizedBox(height: 20),
+                                    _InputPlumbingCard(
+                                      enabled: _nativeInputEnabled,
+                                      onChanged: _setNativeInputEnabled,
                                     ),
                                     const SizedBox(height: 20),
                                     _QuickLoadCard(
@@ -277,11 +304,13 @@ class _ServoSurfaceCard extends StatelessWidget {
     required this.html,
     required this.content,
     required this.useHtmlContent,
+    required this.enableInputPlumbing,
   });
 
   final String html;
   final String content;
   final bool useHtmlContent;
+  final bool enableInputPlumbing;
 
   @override
   Widget build(BuildContext context) {
@@ -363,8 +392,16 @@ class _ServoSurfaceCard extends StatelessWidget {
     final surface = content.trim().isEmpty
         ? fallback
         : useHtmlContent
-        ? FlutterServoSurface.html(content: content, fallback: fallback)
-        : FlutterServoSurface.url(content: content, fallback: fallback);
+        ? FlutterServoSurface.html(
+            content: content,
+            fallback: fallback,
+            enableInputPlumbing: enableInputPlumbing,
+          )
+        : FlutterServoSurface.url(
+            content: content,
+            fallback: fallback,
+            enableInputPlumbing: enableInputPlumbing,
+          );
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -401,6 +438,54 @@ class _ServoSurfaceCard extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Expanded(child: surface),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _InputPlumbingCard extends StatelessWidget {
+  const _InputPlumbingCard({required this.enabled, required this.onChanged});
+
+  final bool enabled;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFD6D0C4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Native input plumbing',
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Disable this to leave the Servo surface rendering only. Useful for isolating focus and event forwarding issues.',
+              style: textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF5F5A4F),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SwitchListTile.adaptive(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Forward mouse, keyboard, and focus'),
+              subtitle: Text(enabled ? 'Enabled' : 'Disabled'),
+              value: enabled,
+              onChanged: onChanged,
+            ),
           ],
         ),
       ),
