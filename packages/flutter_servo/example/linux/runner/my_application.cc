@@ -85,9 +85,11 @@ static void my_application_activate(GApplication* application) {
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   g_message("flutter_servo: linux runner finished plugin registration");
 
+  gtk_widget_set_can_focus(GTK_WIDGET(view), TRUE);
   gtk_widget_grab_focus(GTK_WIDGET(view));
   g_message("flutter_servo: linux runner grabbed Flutter view focus");
   gtk_widget_show(GTK_WIDGET(window));
+  gtk_window_present(window);
   g_message("flutter_servo: linux runner showed GTK window");
 }
 
