@@ -48,6 +48,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
   String _activeContent = '';
   FlutterServoContentType _activeContentType = FlutterServoContentType.url;
   bool _nativeInputEnabled = true;
+  bool _nativeLoadInProgress = false;
   static const String _richYoungUrl = 'https://richyoung.ca';
   static const String _autostartMode = String.fromEnvironment(
     'FLUTTER_SERVO_AUTOSTART',
@@ -96,6 +97,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
             _activeContentType = FlutterServoContentType.url;
             break;
         }
+        _nativeLoadInProgress = true;
       });
     });
   }
@@ -105,12 +107,23 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
       _urlController.text = _richYoungUrl;
       _activeContent = _richYoungUrl;
       _activeContentType = FlutterServoContentType.url;
+      _nativeLoadInProgress = true;
     });
   }
 
   void _setNativeInputEnabled(bool value) {
     setState(() {
       _nativeInputEnabled = value;
+    });
+  }
+
+  void _setNativeLoadInProgress(bool value) {
+    if (_nativeLoadInProgress == value) {
+      return;
+    }
+
+    setState(() {
+      _nativeLoadInProgress = value;
     });
   }
 
@@ -211,6 +224,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                   _activeContentType = _isHtmlInput
                                       ? FlutterServoContentType.html
                                       : FlutterServoContentType.url;
+                                  _nativeLoadInProgress = true;
                                 });
                               },
                               child: const Text('Load'),
@@ -246,6 +260,8 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                       _activeContentType ==
                                       FlutterServoContentType.html,
                                   enableInputPlumbing: _nativeInputEnabled,
+                                  isLoading: _nativeLoadInProgress,
+                                  onLoadStateChanged: _setNativeLoadInProgress,
                                 ),
                               ),
                               SizedBox(
@@ -259,10 +275,13 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                       currentUrl: _urlController.text,
                                       contentMode: _activeContent.isEmpty
                                           ? 'Idle'
+                                          : _nativeLoadInProgress
+                                          ? 'Loading'
                                           : _activeContentType ==
                                                 FlutterServoContentType.html
                                           ? 'HTML'
                                           : 'URL/Data URL',
+                                      isLoading: _nativeLoadInProgress,
                                     ),
                                     const SizedBox(height: 20),
                                     _InputPlumbingCard(
@@ -305,12 +324,16 @@ class _ServoSurfaceCard extends StatelessWidget {
     required this.content,
     required this.useHtmlContent,
     required this.enableInputPlumbing,
+    required this.isLoading,
+    required this.onLoadStateChanged,
   });
 
   final String html;
   final String content;
   final bool useHtmlContent;
   final bool enableInputPlumbing;
+  final bool isLoading;
+  final ValueChanged<bool> onLoadStateChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -396,11 +419,13 @@ class _ServoSurfaceCard extends StatelessWidget {
             content: content,
             fallback: fallback,
             enableInputPlumbing: enableInputPlumbing,
+            onLoadStateChanged: onLoadStateChanged,
           )
         : FlutterServoSurface.url(
             content: content,
             fallback: fallback,
             enableInputPlumbing: enableInputPlumbing,
+            onLoadStateChanged: onLoadStateChanged,
           );
 
     return DecoratedBox(
@@ -437,7 +462,62 @@ class _ServoSurfaceCard extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            Expanded(child: surface),
+            Expanded(
+              child: Stack(
+                children: [
+                  Positioned.fill(child: surface),
+                  if (isLoading)
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xAA101C1A),
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 280),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF6F1E7),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: const Color(0xFFD8CCB8),
+                                ),
+                              ),
+                              child: Padding(
+                                padding: const EdgeInsets.all(20),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const CircularProgressIndicator(),
+                                    const SizedBox(height: 14),
+                                    Text(
+                                      'Loading native Servo content',
+                                      style: textTheme.titleMedium?.copyWith(
+                                        color: const Color(0xFF1E2E2A),
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      'Waiting for the first painted frame.',
+                                      style: textTheme.bodySmall?.copyWith(
+                                        color: const Color(0xFF5E6B67),
+                                      ),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
@@ -494,10 +574,15 @@ class _InputPlumbingCard extends StatelessWidget {
 }
 
 class _StatusCard extends StatelessWidget {
-  const _StatusCard({required this.currentUrl, required this.contentMode});
+  const _StatusCard({
+    required this.currentUrl,
+    required this.contentMode,
+    required this.isLoading,
+  });
 
   final String currentUrl;
   final String contentMode;
+  final bool isLoading;
 
   @override
   Widget build(BuildContext context) {
@@ -523,16 +608,26 @@ class _StatusCard extends StatelessWidget {
             const SizedBox(height: 12),
             _StatusRow(label: 'Content mode', value: contentMode),
             const SizedBox(height: 12),
+            _StatusRow(
+              label: 'Load state',
+              value: isLoading ? 'Waiting for first frame' : 'Idle',
+            ),
+            const SizedBox(height: 12),
             const _StatusRow(label: 'Package API', value: 'Ready'),
             const SizedBox(height: 12),
             const _StatusRow(label: 'Linux plugin', value: 'Ready'),
             const SizedBox(height: 12),
             const _StatusRow(label: 'Rust session bridge', value: 'Ready'),
             const SizedBox(height: 12),
-            const _StatusRow(label: 'Servo renderer', value: 'Planned next'),
+            _StatusRow(
+              label: 'Servo renderer',
+              value: isLoading ? 'Rendering' : 'Ready',
+            ),
             const Spacer(),
             Text(
-              'The example app now drives a stateful Rust session with URL or HTML content updates.',
+              isLoading
+                  ? 'Servo is loading the target and will replace this overlay when the first frame arrives.'
+                  : 'The example app now drives a stateful Rust session with URL or HTML content updates.',
               style: textTheme.bodyMedium,
             ),
           ],

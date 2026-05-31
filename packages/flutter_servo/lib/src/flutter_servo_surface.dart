@@ -20,6 +20,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.content,
     required this.fallback,
     this.enableInputPlumbing = true,
+    this.onLoadStateChanged,
   }) : contentType = FlutterServoContentType.url;
 
   const FlutterServoSurface.html({
@@ -27,12 +28,14 @@ class FlutterServoSurface extends StatefulWidget {
     required this.content,
     required this.fallback,
     this.enableInputPlumbing = true,
+    this.onLoadStateChanged,
   }) : contentType = FlutterServoContentType.html;
 
   final FlutterServoContentType contentType;
   final String content;
   final Widget fallback;
   final bool enableInputPlumbing;
+  final ValueChanged<bool>? onLoadStateChanged;
 
   @override
   State<FlutterServoSurface> createState() => _FlutterServoSurfaceState();
@@ -167,6 +170,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           _contentUpdateInFlight = true;
           _lastRenderedContent = content;
           _lastRenderedContentType = widget.contentType;
+          widget.onLoadStateChanged?.call(true);
           try {
             await _channel.invokeMethod<void>(widget.contentType.methodName, [
               content,
@@ -178,6 +182,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           } finally {
             _contentUpdateInFlight = false;
             if (mounted) {
+              widget.onLoadStateChanged?.call(false);
               _scheduleTextureSync();
               _requestFocusAfterUpdate();
               _queueDeferredTextureRefresh();
