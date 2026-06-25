@@ -18,12 +18,23 @@ struct _FlutterServoPlugin {
   ServoTexture* texture;
   RustRenderBridge* rust_render_bridge;
   RustRenderSessionHandle session;
+  FlMethodChannel* method_channel;
   gchar* http_proxy_uri;
   gchar* https_proxy_uri;
   gchar* no_proxy;
 };
 
 G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
+
+static void send_load_state_changed(FlutterServoPlugin* self, bool is_loading) {
+  if (self == nullptr || self->method_channel == nullptr) {
+    return;
+  }
+
+  g_autoptr(FlValue) args = fl_value_new_bool(is_loading);
+  fl_method_channel_invoke_method(self->method_channel, "loadStateChanged",
+                                  args, nullptr, nullptr, nullptr);
+}
 
 static bool ensure_session(FlutterServoPlugin* self) {
   if (self->session != nullptr) {
@@ -337,13 +348,20 @@ static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
         "invalid-args", "Expected [url].", nullptr));
   }
   g_message("flutter_servo: linux plugin setUrl");
+  send_load_state_changed(self, true);
   if (!ensure_session(self) ||
       !rust_render_bridge_set_url(self->rust_render_bridge, self->session,
                                   url)) {
+    send_load_state_changed(self, false);
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "session-update-failed", "Failed to set URL content.", nullptr));
   }
-  render_texture(self, url);
+  if (!render_texture(self, url)) {
+    send_load_state_changed(self, false);
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "render-failed", "Failed to render URL content.", nullptr));
+  }
+  send_load_state_changed(self, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -355,13 +373,20 @@ static FlMethodResponse* handle_set_html(FlutterServoPlugin* self,
         "invalid-args", "Expected [html].", nullptr));
   }
   g_message("flutter_servo: linux plugin setHtml");
+  send_load_state_changed(self, true);
   if (!ensure_session(self) ||
       !rust_render_bridge_set_html(self->rust_render_bridge, self->session,
                                    html)) {
+    send_load_state_changed(self, false);
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "session-update-failed", "Failed to set HTML content.", nullptr));
   }
-  render_texture(self, html);
+  if (!render_texture(self, html)) {
+    send_load_state_changed(self, false);
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "render-failed", "Failed to render HTML content.", nullptr));
+  }
+  send_load_state_changed(self, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -485,6 +510,7 @@ static void flutter_servo_plugin_dispose(GObject* object) {
   self->session = nullptr;
   rust_render_bridge_free(self->rust_render_bridge);
   self->rust_render_bridge = nullptr;
+  g_clear_object(&self->method_channel);
   g_clear_pointer(&self->http_proxy_uri, g_free);
   g_clear_pointer(&self->https_proxy_uri, g_free);
   g_clear_pointer(&self->no_proxy, g_free);
@@ -501,6 +527,7 @@ static void flutter_servo_plugin_init(FlutterServoPlugin* self) {
   self->texture = nullptr;
   self->rust_render_bridge = rust_render_bridge_new();
   self->session = nullptr;
+  self->method_channel = nullptr;
   self->http_proxy_uri = nullptr;
   self->https_proxy_uri = nullptr;
   self->no_proxy = nullptr;
@@ -554,6 +581,7 @@ void flutter_servo_plugin_register_with_registrar(FlPluginRegistrar* registrar) 
   g_autoptr(FlMethodChannel) channel =
       fl_method_channel_new(fl_plugin_registrar_get_messenger(registrar),
                             "flutter_servo", FL_METHOD_CODEC(codec));
+  plugin->method_channel = FL_METHOD_CHANNEL(g_object_ref(channel));
   fl_method_channel_set_method_call_handler(channel, method_call_cb,
                                             g_object_ref(plugin),
                                             g_object_unref);
