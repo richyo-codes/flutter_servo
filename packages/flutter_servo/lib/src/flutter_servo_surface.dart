@@ -44,6 +44,7 @@ class FlutterServoSurface extends StatefulWidget {
 class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   static const MethodChannel _channel = MethodChannel('flutter_servo');
   static const Duration _deferredRefreshDelay = Duration(milliseconds: 16);
+  static final Set<_FlutterServoSurfaceState> _loadStateListeners = {};
 
   final FocusNode _focusNode = FocusNode(debugLabel: 'flutter_servo_surface');
   int? _textureId;
@@ -58,10 +59,43 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   int? _activeMouseButton;
 
   @override
+  void initState() {
+    super.initState();
+    _loadStateListeners.add(this);
+    if (_loadStateListeners.length == 1) {
+      _channel.setMethodCallHandler(_handlePlatformMethodCall);
+    }
+  }
+
+  @override
   void dispose() {
     _deferredRefreshTimer?.cancel();
+    _loadStateListeners.remove(this);
+    if (_loadStateListeners.isEmpty) {
+      _channel.setMethodCallHandler(null);
+    }
     _focusNode.dispose();
     super.dispose();
+  }
+
+  static Future<void> _handlePlatformMethodCall(MethodCall call) async {
+    if (call.method != 'loadStateChanged') {
+      throw MissingPluginException('Unhandled native method: ${call.method}');
+    }
+
+    final isLoading = call.arguments;
+    if (isLoading is! bool) {
+      throw PlatformException(
+        code: 'invalid-load-state',
+        message: 'Expected a boolean load state from the Linux plugin.',
+      );
+    }
+
+    for (final listener in _loadStateListeners.toList()) {
+      if (listener.mounted) {
+        listener.widget.onLoadStateChanged?.call(isLoading);
+      }
+    }
   }
 
   @override
