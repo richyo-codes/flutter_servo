@@ -269,34 +269,36 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                 height: isWide ? 0 : 20,
                               ),
                               Expanded(
-                                child: Column(
-                                  children: [
-                                    _StatusCard(
-                                      currentUrl: _urlController.text,
-                                      contentMode: _activeContent.isEmpty
-                                          ? 'Idle'
-                                          : _nativeLoadInProgress
-                                          ? 'Loading'
-                                          : _activeContentType ==
-                                                FlutterServoContentType.html
-                                          ? 'HTML'
-                                          : 'URL/Data URL',
-                                      isLoading: _nativeLoadInProgress,
-                                    ),
-                                    const SizedBox(height: 20),
-                                    _InputPlumbingCard(
-                                      enabled: _nativeInputEnabled,
-                                      onChanged: _setNativeInputEnabled,
-                                    ),
-                                    const SizedBox(height: 20),
-                                    _QuickLoadCard(
-                                      title: 'RichYoung.ca',
-                                      subtitle:
-                                          'Load the public site into Servo with one tap.',
-                                      url: _richYoungUrl,
-                                      onTap: _loadRichYoung,
-                                    ),
-                                  ],
+                                child: SingleChildScrollView(
+                                  child: Column(
+                                    children: [
+                                      _StatusCard(
+                                        currentUrl: _urlController.text,
+                                        contentMode: _activeContent.isEmpty
+                                            ? 'Idle'
+                                            : _nativeLoadInProgress
+                                            ? 'Loading'
+                                            : _activeContentType ==
+                                                  FlutterServoContentType.html
+                                            ? 'HTML'
+                                            : 'URL/Data URL',
+                                        isLoading: _nativeLoadInProgress,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      _InputPlumbingCard(
+                                        enabled: _nativeInputEnabled,
+                                        onChanged: _setNativeInputEnabled,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      _QuickLoadCard(
+                                        title: 'RichYoung.ca',
+                                        subtitle:
+                                            'Load the public site into Servo with one tap.',
+                                        url: _richYoungUrl,
+                                        onTap: _loadRichYoung,
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ];
@@ -534,12 +536,13 @@ class _InputPlumbingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFD6D0C4)),
+        side: const BorderSide(color: Color(0xFFD6D0C4)),
       ),
+      clipBehavior: Clip.antiAlias,
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -623,7 +626,7 @@ class _StatusCard extends StatelessWidget {
               label: 'Servo renderer',
               value: isLoading ? 'Rendering' : 'Ready',
             ),
-            const Spacer(),
+            const SizedBox(height: 20),
             Text(
               isLoading
                   ? 'Servo is loading the target and will replace this overlay when the first frame arrives.'
