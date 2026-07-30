@@ -47,6 +47,7 @@ class FlutterServoSurface extends StatefulWidget {
 class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   static const MethodChannel _channel = MethodChannel('flutter_servo');
   static const Duration _deferredRefreshDelay = Duration(milliseconds: 16);
+  static const Duration _resizeSyncDelay = Duration(milliseconds: 80);
   static final Set<_FlutterServoSurfaceState> _loadStateListeners = {};
 
   final FocusNode _focusNode = FocusNode(debugLabel: 'flutter_servo_surface');
@@ -58,6 +59,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   bool _syncQueued = false;
   bool _deferredRefreshQueued = false;
   Timer? _deferredRefreshTimer;
+  Timer? _resizeSyncTimer;
   bool _contentUpdateInFlight = false;
   bool _mouseMoveInFlight = false;
   String? _lastRenderedContent;
@@ -78,6 +80,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   @override
   void dispose() {
     _deferredRefreshTimer?.cancel();
+    _resizeSyncTimer?.cancel();
     _pendingMousePosition = null;
     _loadStateListeners.remove(this);
     if (_loadStateListeners.isEmpty) {
@@ -177,13 +180,18 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         1,
         (logicalSize.height * devicePixelRatio).round(),
       );
+      final dimensionsChanged =
+          _textureWidth != width || _textureHeight != height;
+      if (_textureId != null &&
+          dimensionsChanged &&
+          (_resizeSyncTimer?.isActive ?? false)) {
+        return;
+      }
 
       try {
         final hadTexture = _textureId != null;
         var textureId = _textureId;
-        if (textureId == null ||
-            _textureWidth != width ||
-            _textureHeight != height) {
+        if (textureId == null || dimensionsChanged) {
           textureId = await _channel.invokeMethod<int>(
             textureId == null ? 'createTexture' : 'resizeTexture',
             [width, height],
@@ -253,6 +261,17 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           _textureWidth = null;
           _textureHeight = null;
         });
+      }
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
+
+  void _scheduleResizeSync() {
+    _resizeSyncTimer?.cancel();
+    _resizeSyncTimer = Timer(_resizeSyncDelay, () {
+      _resizeSyncTimer = null;
+      if (mounted) {
+        _scheduleTextureSync();
       }
     });
   }
@@ -381,12 +400,20 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        _logicalSize = Size(
+        final logicalSize = Size(
           constraints.maxWidth.isFinite ? constraints.maxWidth : size.width,
           constraints.maxHeight.isFinite ? constraints.maxHeight : size.height,
         );
+        final sizeChanged =
+            _logicalSize != logicalSize ||
+            _devicePixelRatio != devicePixelRatio;
+        _logicalSize = logicalSize;
         _devicePixelRatio = devicePixelRatio;
-        _scheduleTextureSync();
+        if (_textureId == null) {
+          _scheduleTextureSync();
+        } else if (sizeChanged) {
+          _scheduleResizeSync();
+        }
 
         final child = _textureId == null
             ? widget.fallback

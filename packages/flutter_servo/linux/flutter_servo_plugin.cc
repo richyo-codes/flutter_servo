@@ -433,7 +433,6 @@ static FlMethodResponse* handle_notify_mouse_move(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward mouse move.", nullptr));
   }
-  render_texture(self, "mouse-move");
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 

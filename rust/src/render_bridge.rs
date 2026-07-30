@@ -9,6 +9,7 @@ const ALPHA: u8 = 255;
 #[cfg(feature = "servo-engine")]
 mod imp {
     use std::cell::Cell;
+    use std::panic::{catch_unwind, AssertUnwindSafe};
     use std::ptr::null_mut;
     use std::rc::Rc;
     use std::sync::{
@@ -226,6 +227,9 @@ mod imp {
                     webview.notify_input_event(InputEvent::MouseMove(MouseMoveEvent::new(
                         DevicePoint::new(x as f32, y as f32).into(),
                     )));
+                    if let Some(servo) = self.servo.as_ref() {
+                        servo.spin_event_loop();
+                    }
                     true
                 })
                 .unwrap_or(false)
@@ -360,6 +364,16 @@ mod imp {
                 eprintln!("flutter_servo: rust render framebuffer read failed");
                 return false;
             };
+            let gl = rendering_context.gleam_gl_api();
+            loop {
+                let error = gl.get_error();
+                if error == 0 {
+                    break;
+                }
+                eprintln!(
+                    "flutter_servo: rust render cleared GL error after framebuffer read: {error}"
+                );
+            }
 
             copy_image_into_buffer(&image, width, height, unsafe {
                 slice::from_raw_parts_mut(out_rgba, expected_len)
@@ -694,7 +708,13 @@ mod imp {
         let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
             return false;
         };
-        session.render_rgba(width, height, out_rgba, out_len)
+        catch_unwind(AssertUnwindSafe(|| {
+            session.render_rgba(width, height, out_rgba, out_len)
+        }))
+        .unwrap_or_else(|_| {
+            eprintln!("flutter_servo: rust render panicked");
+            false
+        })
     }
 }
 
