@@ -21,6 +21,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.onLoadStateChanged,
+    this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.url;
 
   const FlutterServoSurface.html({
@@ -29,6 +30,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.onLoadStateChanged,
+    this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.html;
 
   final FlutterServoContentType contentType;
@@ -36,6 +38,7 @@ class FlutterServoSurface extends StatefulWidget {
   final Widget fallback;
   final bool enableInputPlumbing;
   final ValueChanged<bool>? onLoadStateChanged;
+  final int reloadRevision;
 
   @override
   State<FlutterServoSurface> createState() => _FlutterServoSurfaceState();
@@ -59,6 +62,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   bool _mouseMoveInFlight = false;
   String? _lastRenderedContent;
   FlutterServoContentType? _lastRenderedContentType;
+  int? _lastRenderedRevision;
   int? _activeMouseButton;
   Offset? _pendingMousePosition;
 
@@ -107,7 +111,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   void didUpdateWidget(covariant FlutterServoSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.content != widget.content ||
-        oldWidget.contentType != widget.contentType) {
+        oldWidget.contentType != widget.contentType ||
+        oldWidget.reloadRevision != widget.reloadRevision) {
       _scheduleTextureSync();
       _requestFocusAfterUpdate();
       _queueDeferredTextureRefresh();
@@ -209,13 +214,16 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         }
 
         if ((_lastRenderedContent != content ||
-                _lastRenderedContentType != widget.contentType) &&
+                _lastRenderedContentType != widget.contentType ||
+                _lastRenderedRevision != widget.reloadRevision) &&
             !_contentUpdateInFlight) {
           final previousContent = _lastRenderedContent;
           final previousContentType = _lastRenderedContentType;
+          final previousRevision = _lastRenderedRevision;
           _contentUpdateInFlight = true;
           _lastRenderedContent = content;
           _lastRenderedContentType = widget.contentType;
+          _lastRenderedRevision = widget.reloadRevision;
           widget.onLoadStateChanged?.call(true);
           try {
             await _channel.invokeMethod<void>(widget.contentType.methodName, [
@@ -224,6 +232,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           } catch (_) {
             _lastRenderedContent = previousContent;
             _lastRenderedContentType = previousContentType;
+            _lastRenderedRevision = previousRevision;
             rethrow;
           } finally {
             _contentUpdateInFlight = false;

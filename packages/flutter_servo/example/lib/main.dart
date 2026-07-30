@@ -47,6 +47,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
   final TextEditingController _urlController = TextEditingController();
   String _activeContent = '';
   FlutterServoContentType _activeContentType = FlutterServoContentType.url;
+  int _reloadRevision = 0;
   bool _nativeInputEnabled = true;
   bool _nativeLoadInProgress = false;
   static const String _richYoungUrl = 'https://richyoung.ca';
@@ -98,6 +99,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
             break;
         }
         _nativeLoadInProgress = true;
+        _reloadRevision++;
       });
     });
   }
@@ -108,6 +110,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
       _activeContent = _richYoungUrl;
       _activeContentType = FlutterServoContentType.url;
       _nativeLoadInProgress = true;
+      _reloadRevision++;
     });
   }
 
@@ -225,6 +228,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                       ? FlutterServoContentType.html
                                       : FlutterServoContentType.url;
                                   _nativeLoadInProgress = true;
+                                  _reloadRevision++;
                                 });
                               },
                               child: const Text('Load'),
@@ -259,6 +263,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                   useHtmlContent:
                                       _activeContentType ==
                                       FlutterServoContentType.html,
+                                  reloadRevision: _reloadRevision,
                                   enableInputPlumbing: _nativeInputEnabled,
                                   isLoading: _nativeLoadInProgress,
                                   onLoadStateChanged: _setNativeLoadInProgress,
@@ -325,6 +330,7 @@ class _ServoSurfaceCard extends StatelessWidget {
     required this.html,
     required this.content,
     required this.useHtmlContent,
+    required this.reloadRevision,
     required this.enableInputPlumbing,
     required this.isLoading,
     required this.onLoadStateChanged,
@@ -333,6 +339,7 @@ class _ServoSurfaceCard extends StatelessWidget {
   final String html;
   final String content;
   final bool useHtmlContent;
+  final int reloadRevision;
   final bool enableInputPlumbing;
   final bool isLoading;
   final ValueChanged<bool> onLoadStateChanged;
@@ -420,12 +427,14 @@ class _ServoSurfaceCard extends StatelessWidget {
         ? FlutterServoSurface.html(
             content: content,
             fallback: fallback,
+            reloadRevision: reloadRevision,
             enableInputPlumbing: enableInputPlumbing,
             onLoadStateChanged: onLoadStateChanged,
           )
         : FlutterServoSurface.url(
             content: content,
             fallback: fallback,
+            reloadRevision: reloadRevision,
             enableInputPlumbing: enableInputPlumbing,
             onLoadStateChanged: onLoadStateChanged,
           );

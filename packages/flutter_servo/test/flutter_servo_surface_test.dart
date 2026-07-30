@@ -68,4 +68,52 @@ void main() {
 
     await pointer.up();
   });
+
+  testWidgets('reloads unchanged content when the revision changes', (
+    tester,
+  ) async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          return null;
+        });
+
+    var reloadRevision = 0;
+    late StateSetter updateSurface;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            updateSurface = setState;
+            return SizedBox(
+              width: 200,
+              height: 100,
+              child: FlutterServoSurface.html(
+                content: '<p>Same target</p>',
+                reloadRevision: reloadRevision,
+                fallback: const ColoredBox(color: Colors.white),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(calls.where((call) => call.method == 'setHtml'), hasLength(1));
+
+    updateSurface(() {
+      reloadRevision++;
+    });
+    await tester.pump();
+    await tester.pump();
+
+    expect(calls.where((call) => call.method == 'setHtml'), hasLength(2));
+  });
 }
