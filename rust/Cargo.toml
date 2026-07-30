@@ -8,13 +8,20 @@ crate-type = ["cdylib", "staticlib"]
 
 [features]
 default = []
-servo-engine = ["dep:dpi", "dep:percent-encoding", "dep:servo", "dep:url"]
+servo-engine = [
+    "dep:dpi",
+    "dep:percent-encoding",
+    "dep:servo",
+    "dep:servo-allocator",
+    "dep:url",
+]
 
 [dependencies]
 flutter_rust_bridge = "=2.12.0"
 dpi = { version = "0.1", optional = true }
 percent-encoding = { version = "2.3", optional = true }
 servo = { path = "/path/to/servo/components/servo", default-features = false, features = ["baked-in-resources", "js_jit"], optional = true }
+servo-allocator = { path = "/path/to/servo/components/allocator", features = ["use-system-allocator"], optional = true }
 url = { version = "2.5", optional = true }
 
 [patch.crates-io]
