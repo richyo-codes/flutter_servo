@@ -46,7 +46,7 @@ class FlutterServoSurface extends StatefulWidget {
 
 class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   static const MethodChannel _channel = MethodChannel('flutter_servo');
-  static const Duration _deferredRefreshDelay = Duration(milliseconds: 16);
+  static const Duration _deferredRefreshDelay = Duration(milliseconds: 32);
   static const Duration _resizeSyncDelay = Duration(milliseconds: 80);
   static final Set<_FlutterServoSurfaceState> _loadStateListeners = {};
 
@@ -142,10 +142,19 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
     _deferredRefreshQueued = true;
     _deferredRefreshTimer?.cancel();
-    _deferredRefreshTimer = Timer(_deferredRefreshDelay, () {
+    _deferredRefreshTimer = Timer(_deferredRefreshDelay, () async {
       _deferredRefreshQueued = false;
-      if (mounted) {
-        _scheduleTextureSync();
+      if (!mounted || _textureId == null || widget.content.trim().isEmpty) {
+        return;
+      }
+      if (_contentUpdateInFlight) {
+        _queueDeferredTextureRefresh();
+        return;
+      }
+      try {
+        await _channel.invokeMethod<void>('refreshTexture');
+      } on MissingPluginException {
+        // The fallback remains visible on unsupported platforms.
       }
     });
   }

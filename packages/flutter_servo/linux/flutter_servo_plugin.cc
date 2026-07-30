@@ -345,6 +345,19 @@ static FlMethodResponse* handle_resize_texture(FlutterServoPlugin* self,
   return FL_METHOD_RESPONSE(fl_method_success_response_new(id));
 }
 
+static FlMethodResponse* handle_refresh_texture(FlutterServoPlugin* self) {
+  if (self->texture == nullptr || self->session == nullptr) {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "session-missing", "Load content before refreshing the Servo texture.",
+        nullptr));
+  }
+  if (!render_texture(self, "refresh")) {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "render-failed", "Failed to refresh Servo content.", nullptr));
+  }
+  return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
+}
+
 static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
                                         FlMethodCall* method_call) {
   const gchar* url = parse_single_string_arg(method_call);
@@ -547,6 +560,8 @@ static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
     response = handle_create_texture(plugin, method_call);
   } else if (strcmp(method, "resizeTexture") == 0) {
     response = handle_resize_texture(plugin, method_call);
+  } else if (strcmp(method, "refreshTexture") == 0) {
+    response = handle_refresh_texture(plugin);
   } else if (strcmp(method, "setUrl") == 0) {
     response = handle_set_url(plugin, method_call);
   } else if (strcmp(method, "setHtml") == 0) {

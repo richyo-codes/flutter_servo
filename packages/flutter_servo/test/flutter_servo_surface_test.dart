@@ -113,8 +113,10 @@ void main() {
     });
     await tester.pump();
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
 
     expect(calls.where((call) => call.method == 'setHtml'), hasLength(2));
+    expect(calls.where((call) => call.method == 'refreshTexture'), isNotEmpty);
   });
 
   testWidgets('debounces texture resize to the settled dimensions', (
