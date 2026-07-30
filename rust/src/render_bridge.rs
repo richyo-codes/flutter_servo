@@ -19,15 +19,14 @@ mod imp {
 
     use dpi::PhysicalSize;
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+    use servo::{DeviceIntPoint, DeviceIntRect, DeviceIntSize};
     use servo::{
         DevicePoint, EventLoopWaker, InputEvent, Key, KeyState, LoadStatus, MouseButton,
         MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent, MouseMoveEvent, NamedKey,
-        Preferences, RenderingContext, RgbaImage, Servo, ServoBuilder,
-        SoftwareRenderingContext, WebView, WebViewBuilder, WebViewDelegate, WheelDelta,
-        WheelEvent, WheelMode,
+        Preferences, RenderingContext, RgbaImage, Servo, ServoBuilder, SoftwareRenderingContext,
+        WebView, WebViewBuilder, WebViewDelegate, WheelDelta, WheelEvent, WheelMode,
     };
     use url::Url;
-    use servo::{DeviceIntPoint, DeviceIntRect, DeviceIntSize};
 
     use super::{c_char, c_string, c_void, slice, BYTES_PER_PIXEL};
 
@@ -232,7 +231,13 @@ mod imp {
                 .unwrap_or(false)
         }
 
-        fn send_mouse_button(&self, x: i32, y: i32, button: MouseButton, action: MouseButtonAction) -> bool {
+        fn send_mouse_button(
+            &self,
+            x: i32,
+            y: i32,
+            button: MouseButton,
+            action: MouseButtonAction,
+        ) -> bool {
             let point = DevicePoint::new(x as f32, y as f32).into();
             self.webview
                 .as_ref()
@@ -276,7 +281,12 @@ mod imp {
                 .unwrap_or(false)
         }
 
-        fn send_keyboard_event(&self, key_label: &str, character: &str, key_state: KeyState) -> bool {
+        fn send_keyboard_event(
+            &self,
+            key_label: &str,
+            character: &str,
+            key_state: KeyState,
+        ) -> bool {
             let key = key_from_flutter_key(key_label, character);
             self.webview
                 .as_ref()
@@ -319,6 +329,13 @@ mod imp {
 
             if !self.prepare_for_render(width, height) {
                 eprintln!("flutter_servo: rust render prepare failed");
+                return false;
+            }
+
+            if let Some(servo) = self.servo.as_ref() {
+                servo.spin_event_loop();
+            } else {
+                eprintln!("flutter_servo: rust render missing Servo event loop");
                 return false;
             }
 

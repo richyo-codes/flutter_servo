@@ -333,7 +333,12 @@ static FlMethodResponse* handle_resize_texture(FlutterServoPlugin* self,
 
   g_message("flutter_servo: linux plugin resizeTexture %ux%u", width, height);
   servo_texture_resize(self->texture, width, height);
-  publish_placeholder_texture(self, "resize");
+  if (self->session == nullptr) {
+    publish_placeholder_texture(self, "resize");
+  } else if (!render_texture(self, "resize")) {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "render-failed", "Failed to render resized content.", nullptr));
+  }
 
   g_autoptr(FlValue) id =
       fl_value_new_int(fl_texture_get_id(FL_TEXTURE(self->texture)));
