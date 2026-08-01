@@ -458,7 +458,16 @@ mod imp {
 
     impl Drop for ServoRenderSession {
         fn drop(&mut self) {
-            let _ = self.webview.take();
+            if let Some(webview) = self.webview.take() {
+                drop(webview);
+                if let Some(servo) = self.servo.as_ref() {
+                    let deadline = Instant::now() + Duration::from_millis(100);
+                    while Instant::now() < deadline {
+                        servo.spin_event_loop();
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                }
+            }
             let _ = self.servo.take();
             let _ = self.rendering_context.take();
         }
