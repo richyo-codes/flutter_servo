@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_servo/flutter_servo.dart';
 
+enum _ViewportMode { desktop, mobile }
+
 Future<void> main() async {
   debugPrint('flutter_servo: Dart main start');
   WidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +52,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
   int _reloadRevision = 0;
   bool _nativeInputEnabled = true;
   bool _nativeLoadInProgress = false;
+  _ViewportMode _viewportMode = _ViewportMode.desktop;
   static const String _richYoungUrl = 'https://richyoung.ca';
   static const String _autostartMode = String.fromEnvironment(
     'FLUTTER_SERVO_AUTOSTART',
@@ -127,6 +130,19 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
 
     setState(() {
       _nativeLoadInProgress = value;
+    });
+  }
+
+  void _setViewportMode(_ViewportMode value) {
+    if (_viewportMode == value) {
+      return;
+    }
+    setState(() {
+      _viewportMode = value;
+      if (_activeContent.isNotEmpty) {
+        _nativeLoadInProgress = true;
+        _reloadRevision++;
+      }
     });
   }
 
@@ -267,6 +283,7 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                   enableInputPlumbing: _nativeInputEnabled,
                                   isLoading: _nativeLoadInProgress,
                                   onLoadStateChanged: _setNativeLoadInProgress,
+                                  viewportMode: _viewportMode,
                                 ),
                               ),
                               SizedBox(
@@ -293,6 +310,11 @@ class _BootstrapHomePageState extends State<BootstrapHomePage> {
                                       _InputPlumbingCard(
                                         enabled: _nativeInputEnabled,
                                         onChanged: _setNativeInputEnabled,
+                                      ),
+                                      const SizedBox(height: 20),
+                                      _ViewportModeCard(
+                                        mode: _viewportMode,
+                                        onChanged: _setViewportMode,
                                       ),
                                       const SizedBox(height: 20),
                                       _QuickLoadCard(
@@ -334,6 +356,7 @@ class _ServoSurfaceCard extends StatelessWidget {
     required this.enableInputPlumbing,
     required this.isLoading,
     required this.onLoadStateChanged,
+    required this.viewportMode,
   });
 
   final String html;
@@ -343,6 +366,7 @@ class _ServoSurfaceCard extends StatelessWidget {
   final bool enableInputPlumbing;
   final bool isLoading;
   final ValueChanged<bool> onLoadStateChanged;
+  final _ViewportMode viewportMode;
 
   @override
   Widget build(BuildContext context) {
@@ -476,7 +500,23 @@ class _ServoSurfaceCard extends StatelessWidget {
             Expanded(
               child: Stack(
                 children: [
-                  Positioned.fill(child: surface),
+                  Positioned.fill(
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final width = viewportMode == _ViewportMode.mobile
+                            ? constraints.maxWidth.clamp(1.0, 390.0)
+                            : constraints.maxWidth;
+                        return Align(
+                          alignment: Alignment.topCenter,
+                          child: SizedBox(
+                            width: width,
+                            height: constraints.maxHeight,
+                            child: surface,
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                   if (isLoading)
                     Positioned.fill(
                       child: DecoratedBox(
@@ -577,6 +617,68 @@ class _InputPlumbingCard extends StatelessWidget {
               subtitle: Text(enabled ? 'Enabled' : 'Disabled'),
               value: enabled,
               onChanged: onChanged,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ViewportModeCard extends StatelessWidget {
+  const _ViewportModeCard({required this.mode, required this.onChanged});
+
+  final _ViewportMode mode;
+  final ValueChanged<_ViewportMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: const BorderSide(color: Color(0xFFD6D0C4)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Viewport mode',
+              style: textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Mobile uses a 390-pixel-wide viewport and reloads the active target.',
+              style: textTheme.bodySmall?.copyWith(
+                color: const Color(0xFF5F5A4F),
+              ),
+            ),
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<_ViewportMode>(
+                segments: const [
+                  ButtonSegment(
+                    value: _ViewportMode.desktop,
+                    icon: Icon(Icons.desktop_windows_outlined),
+                    label: Text('Desktop'),
+                  ),
+                  ButtonSegment(
+                    value: _ViewportMode.mobile,
+                    icon: Icon(Icons.phone_android_outlined),
+                    label: Text('Mobile'),
+                  ),
+                ],
+                selected: {mode},
+                onSelectionChanged: (selection) {
+                  onChanged(selection.single);
+                },
+              ),
             ),
           ],
         ),
