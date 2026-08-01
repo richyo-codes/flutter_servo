@@ -2,12 +2,12 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
-MANIFEST="$ROOT_DIR/flatpak/ca.richyoung.flutter_servo_browser.yml"
+MANIFEST="$ROOT_DIR/flatpak/com.rnd.flutter_servo_browser.yml"
 EXAMPLE_DIR="$ROOT_DIR/packages/flutter_servo/example"
 BUILD_DIR="$EXAMPLE_DIR/build/flatpak"
 REPO_DIR="$EXAMPLE_DIR/build/flatpak-repo"
-BUNDLE_PATH="$EXAMPLE_DIR/build/ca.richyoung.flutter_servo_browser.flatpak"
-APP_ID="ca.richyoung.flutter_servo_browser"
+BUNDLE_PATH="$EXAMPLE_DIR/build/com.rnd.flutter_servo_browser.flatpak"
+APP_ID="com.rnd.flutter_servo_browser"
 FLATPAK_BUILDER_ARGS=(--disable-rofiles-fuse --force-clean)
 
 if ! command -v flatpak-builder >/dev/null 2>&1; then

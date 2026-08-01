@@ -2,13 +2,13 @@
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)
-MANIFEST="$ROOT_DIR/flatpak/ca.richyoung.flutter_servo_browser.yml"
-APP_ID="ca.richyoung.flutter_servo_browser"
+MANIFEST="$ROOT_DIR/flatpak/com.rnd.flutter_servo_browser.yml"
+APP_ID="com.rnd.flutter_servo_browser"
 CONTAINER_ROOT="/src"
-CONTAINER_MANIFEST="$CONTAINER_ROOT/flatpak/ca.richyoung.flutter_servo_browser.yml"
+CONTAINER_MANIFEST="$CONTAINER_ROOT/flatpak/com.rnd.flutter_servo_browser.yml"
 CONTAINER_BUILD_DIR="$CONTAINER_ROOT/build/flatpak"
 CONTAINER_REPO_DIR="$CONTAINER_ROOT/build/flatpak-repo"
-CONTAINER_BUNDLE_PATH="$CONTAINER_ROOT/build/ca.richyoung.flutter_servo_browser.flatpak"
+CONTAINER_BUNDLE_PATH="$CONTAINER_ROOT/build/com.rnd.flutter_servo_browser.flatpak"
 CONTAINER_ID=""
 DEFAULT_OUT_DIR="/tmp/flutter-servo-browser-flatpak"
 
@@ -47,7 +47,7 @@ mkdir -p "$OUT_DIR"
 OUT_DIR=$(cd "$OUT_DIR" && pwd -P)
 BUILD_DIR="$OUT_DIR/flatpak"
 REPO_DIR="$OUT_DIR/flatpak-repo"
-BUNDLE_PATH="$OUT_DIR/ca.richyoung.flutter_servo_browser.flatpak"
+BUNDLE_PATH="$OUT_DIR/com.rnd.flutter_servo_browser.flatpak"
 
 if [[ ! -f "$MANIFEST" ]]; then
   echo "Flatpak manifest not found: $MANIFEST" >&2
