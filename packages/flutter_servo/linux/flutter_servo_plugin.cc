@@ -36,6 +36,28 @@ static void send_load_state_changed(FlutterServoPlugin* self, bool is_loading) {
                                   args, nullptr, nullptr, nullptr);
 }
 
+static void send_navigation_state_changed(FlutterServoPlugin* self) {
+  if (self == nullptr || self->method_channel == nullptr || self->session == nullptr) {
+    return;
+  }
+
+  gchar url[4096] = {};
+  bool can_go_back = false;
+  bool can_go_forward = false;
+  if (!rust_render_bridge_get_navigation_state(
+          self->rust_render_bridge, self->session, url, sizeof(url),
+          &can_go_back, &can_go_forward)) {
+    return;
+  }
+
+  g_autoptr(FlValue) args = fl_value_new_list();
+  fl_value_append_take(args, fl_value_new_string(url));
+  fl_value_append_take(args, fl_value_new_bool(can_go_back));
+  fl_value_append_take(args, fl_value_new_bool(can_go_forward));
+  fl_method_channel_invoke_method(self->method_channel, "navigationStateChanged",
+                                  args, nullptr, nullptr, nullptr);
+}
+
 static bool ensure_session(FlutterServoPlugin* self) {
   if (self->session != nullptr) {
     return true;
@@ -71,6 +93,9 @@ static bool render_texture(FlutterServoPlugin* self, const gchar* fallback_seed)
 
   fl_texture_registrar_mark_texture_frame_available(self->texture_registrar,
                                                     FL_TEXTURE(self->texture));
+  if (rendered) {
+    send_navigation_state_changed(self);
+  }
   return rendered;
 }
 
@@ -358,6 +383,33 @@ static FlMethodResponse* handle_refresh_texture(FlutterServoPlugin* self) {
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
+static FlMethodResponse* handle_navigation_command(FlutterServoPlugin* self,
+                                                    const gchar* command) {
+  if (!ensure_session(self)) {
+    return FL_METHOD_RESPONSE(fl_method_error_response_new(
+        "session-missing", "Load content before navigating.", nullptr));
+  }
+
+  bool accepted = false;
+  if (strcmp(command, "back") == 0) {
+    accepted = rust_render_bridge_go_back(self->rust_render_bridge, self->session);
+  } else if (strcmp(command, "forward") == 0) {
+    accepted = rust_render_bridge_go_forward(self->rust_render_bridge, self->session);
+  } else if (strcmp(command, "reload") == 0) {
+    accepted = rust_render_bridge_reload(self->rust_render_bridge, self->session);
+  }
+  if (!accepted) {
+    send_navigation_state_changed(self);
+    return FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(false)));
+  }
+
+  send_load_state_changed(self, true);
+  const bool rendered = render_texture(self, command);
+  send_load_state_changed(self, false);
+  return FL_METHOD_RESPONSE(fl_method_success_response_new(
+      fl_value_new_bool(rendered)));
+}
+
 static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
                                         FlMethodCall* method_call) {
   const gchar* url = parse_single_string_arg(method_call);
@@ -562,6 +614,12 @@ static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
     response = handle_resize_texture(plugin, method_call);
   } else if (strcmp(method, "refreshTexture") == 0) {
     response = handle_refresh_texture(plugin);
+  } else if (strcmp(method, "goBack") == 0) {
+    response = handle_navigation_command(plugin, "back");
+  } else if (strcmp(method, "goForward") == 0) {
+    response = handle_navigation_command(plugin, "forward");
+  } else if (strcmp(method, "reload") == 0) {
+    response = handle_navigation_command(plugin, "reload");
   } else if (strcmp(method, "setUrl") == 0) {
     response = handle_set_url(plugin, method_call);
   } else if (strcmp(method, "setHtml") == 0) {

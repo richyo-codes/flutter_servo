@@ -19,6 +19,15 @@ class FlutterServo {
     ]);
   }
 
+  static Future<bool> goBack() async =>
+      await _channel.invokeMethod<bool>('goBack') ?? false;
+
+  static Future<bool> goForward() async =>
+      await _channel.invokeMethod<bool>('goForward') ?? false;
+
+  static Future<bool> reload() async =>
+      await _channel.invokeMethod<bool>('reload') ?? false;
+
   static String greet({required String name}) => 'Hello from Rust, $name.';
 
   static String mvpInitialUrl() =>

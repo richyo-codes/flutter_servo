@@ -4,818 +4,521 @@ import 'package:flutter_servo/flutter_servo.dart';
 enum _ViewportMode { desktop, mobile }
 
 Future<void> main() async {
-  debugPrint('flutter_servo: Dart main start');
   WidgetsFlutterBinding.ensureInitialized();
-  debugPrint('flutter_servo: WidgetsFlutterBinding initialized');
   await FlutterServo.init();
-  debugPrint('flutter_servo: FlutterServo.init complete');
-  runApp(const ServoExampleApp());
-  debugPrint('flutter_servo: runApp called');
+  runApp(const ServoBrowserApp());
 }
 
-class ServoExampleApp extends StatelessWidget {
-  const ServoExampleApp({super.key});
+class ServoBrowserApp extends StatelessWidget {
+  const ServoBrowserApp({super.key});
 
   @override
   Widget build(BuildContext context) {
-    debugPrint('flutter_servo: ServoExampleApp build');
-    final theme = ThemeData(
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: const Color(0xFF0F766E),
-        brightness: Brightness.light,
-      ),
-      scaffoldBackgroundColor: const Color(0xFFF4F1EA),
-      useMaterial3: true,
-    );
-
+    const chrome = Color(0xFF11161C);
     return MaterialApp(
-      title: 'Flutter Servo Example',
+      title: 'Servo Browser',
       debugShowCheckedModeBanner: false,
-      theme: theme,
-      home: const BootstrapHomePage(),
+      theme: ThemeData(
+        brightness: Brightness.dark,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFE57345),
+          brightness: Brightness.dark,
+          surface: chrome,
+        ),
+        scaffoldBackgroundColor: chrome,
+        useMaterial3: true,
+      ),
+      home: const BrowserPage(),
     );
   }
 }
 
-class BootstrapHomePage extends StatefulWidget {
-  const BootstrapHomePage({super.key});
+class BrowserPage extends StatefulWidget {
+  const BrowserPage({super.key});
 
   @override
-  State<BootstrapHomePage> createState() => _BootstrapHomePageState();
+  State<BrowserPage> createState() => _BrowserPageState();
 }
 
-class _BootstrapHomePageState extends State<BootstrapHomePage> {
-  late final Future<BootstrapData> _bootstrapFuture = _loadBootstrapData();
-  final TextEditingController _urlController = TextEditingController();
-  String _activeContent = '';
-  FlutterServoContentType _activeContentType = FlutterServoContentType.url;
-  int _reloadRevision = 0;
-  bool _nativeInputEnabled = true;
-  bool _nativeLoadInProgress = false;
-  _ViewportMode _viewportMode = _ViewportMode.desktop;
-  static const String _richYoungUrl = 'https://richyoung.ca';
-  static const String _autostartMode = String.fromEnvironment(
-    'FLUTTER_SERVO_AUTOSTART',
-    defaultValue: '',
+class _BrowserPageState extends State<BrowserPage> {
+  final TextEditingController _addressController = TextEditingController(
+    text: FlutterServo.mvpInitialUrl(),
   );
+  final FocusNode _addressFocusNode = FocusNode();
+
+  String _content = FlutterServo.mvpInitialUrl();
+  FlutterServoContentType _contentType = FlutterServoContentType.url;
+  int _reloadRevision = 0;
+  bool _isLoading = false;
+  bool _canGoBack = false;
+  bool _canGoForward = false;
+  _ViewportMode _viewportMode = _ViewportMode.desktop;
+
+  @override
+  void dispose() {
+    _addressController.dispose();
+    _addressFocusNode.dispose();
+    super.dispose();
+  }
 
   bool get _isHtmlInput {
-    final trimmed = _urlController.text.trimLeft();
-    return trimmed.startsWith('<') || trimmed.toLowerCase().contains('<html');
+    final input = _addressController.text.trimLeft().toLowerCase();
+    return input.startsWith('<') || input.contains('<html');
   }
 
-  Future<BootstrapData> _loadBootstrapData() async {
-    debugPrint('flutter_servo: Bootstrap load start');
-    final data = BootstrapData(
-      greeting: FlutterServo.greet(name: 'Servo'),
-      initialUrl: FlutterServo.mvpInitialUrl(),
-      initialHtml: FlutterServo.mvpInitialHtml(),
-    );
-    _urlController.text = data.initialUrl;
-    _scheduleAutostart(data);
-    debugPrint('flutter_servo: Bootstrap load complete');
-    return data;
-  }
-
-  void _scheduleAutostart(BootstrapData data) {
-    final mode = _autostartMode.trim().toLowerCase();
-    if (mode.isEmpty) {
+  void _navigate() {
+    final rawInput = _addressController.text.trim();
+    if (rawInput.isEmpty) {
       return;
     }
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || _activeContent.isNotEmpty) {
-        return;
-      }
-
-      debugPrint('flutter_servo: autostart mode=$mode');
-      setState(() {
-        switch (mode) {
-          case 'html':
-            _activeContent = data.initialHtml;
-            _activeContentType = FlutterServoContentType.html;
-            break;
-          case 'url':
-          default:
-            _activeContent = data.initialUrl;
-            _activeContentType = FlutterServoContentType.url;
-            break;
-        }
-        _nativeLoadInProgress = true;
-        _reloadRevision++;
-      });
-    });
-  }
-
-  void _loadRichYoung() {
+    final contentType = _isHtmlInput
+        ? FlutterServoContentType.html
+        : FlutterServoContentType.url;
+    final target = contentType == FlutterServoContentType.html
+        ? rawInput
+        : _resolveAddress(rawInput);
+    _addressFocusNode.unfocus();
     setState(() {
-      _urlController.text = _richYoungUrl;
-      _activeContent = _richYoungUrl;
-      _activeContentType = FlutterServoContentType.url;
-      _nativeLoadInProgress = true;
+      _content = target;
+      _contentType = contentType;
+      _isLoading = true;
       _reloadRevision++;
     });
   }
 
-  void _setNativeInputEnabled(bool value) {
+  String _resolveAddress(String input) {
+    final uri = Uri.tryParse(input);
+    if (uri != null && uri.hasScheme) {
+      return input;
+    }
+    if (input.contains(RegExp(r'\s'))) {
+      return 'https://duckduckgo.com/html/?q=${Uri.encodeQueryComponent(input)}';
+    }
+    return 'https://$input';
+  }
+
+  Future<void> _goBack() async {
+    if (!await FlutterServo.goBack()) {
+      return;
+    }
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+  }
+
+  Future<void> _goForward() async {
+    if (!await FlutterServo.goForward()) {
+      return;
+    }
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+  }
+
+  Future<void> _reload() async {
+    if (!await FlutterServo.reload()) {
+      return;
+    }
+    if (mounted) {
+      setState(() => _isLoading = true);
+    }
+  }
+
+  void _loadQuickSite(String url) {
+    _addressController.text = url;
+    _navigate();
+  }
+
+  void _setViewportMode(_ViewportMode mode) {
+    if (_viewportMode == mode) {
+      return;
+    }
     setState(() {
-      _nativeInputEnabled = value;
+      _viewportMode = mode;
+      _isLoading = true;
+      _reloadRevision++;
     });
   }
 
-  void _setNativeLoadInProgress(bool value) {
-    if (_nativeLoadInProgress == value) {
-      return;
-    }
-
-    setState(() {
-      _nativeLoadInProgress = value;
-    });
-  }
-
-  void _setViewportMode(_ViewportMode value) {
-    if (_viewportMode == value) {
+  void _handleNavigationState(FlutterServoNavigationState state) {
+    if (!mounted) {
       return;
     }
     setState(() {
-      _viewportMode = value;
-      if (_activeContent.isNotEmpty) {
-        _nativeLoadInProgress = true;
-        _reloadRevision++;
+      if (state.url.isNotEmpty && !_addressFocusNode.hasFocus) {
+        _addressController.text = state.url;
       }
+      _canGoBack = state.canGoBack;
+      _canGoForward = state.canGoForward;
     });
-  }
-
-  @override
-  void dispose() {
-    _urlController.dispose();
-    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
     return Scaffold(
       body: SafeArea(
-        child: FutureBuilder<BootstrapData>(
-          future: _bootstrapFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            if (snapshot.hasError) {
-              return Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24),
-                  child: Text('Rust bridge init failed: ${snapshot.error}'),
-                ),
-              );
-            }
-
-            final data = snapshot.requireData;
-            return Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Flutter Servo Browser',
-                    style: textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '${data.greeting} Package-first Linux MVP shell.',
-                    style: textTheme.bodyLarge,
-                  ),
-                  const SizedBox(height: 20),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0xFFD6D0C4)),
-                      boxShadow: const [
-                        BoxShadow(
-                          blurRadius: 24,
-                          color: Color(0x14000000),
-                          offset: Offset(0, 12),
-                        ),
-                      ],
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.all(14),
-                      child: Listener(
-                        behavior: HitTestBehavior.translucent,
-                        onPointerDown: (_) {
-                          debugPrint('flutter_servo: toolbar pointer down');
-                        },
-                        child: Row(
-                          children: [
-                            const Icon(Icons.arrow_back, size: 18),
-                            const SizedBox(width: 10),
-                            const Icon(Icons.arrow_forward, size: 18),
-                            const SizedBox(width: 10),
-                            const Icon(Icons.refresh, size: 18),
-                            const SizedBox(width: 14),
-                            Expanded(
-                              child: TextField(
-                                controller: _urlController,
-                                onTap: () {
-                                  debugPrint('flutter_servo: url field tapped');
-                                },
-                                decoration: const InputDecoration(
-                                  isDense: true,
-                                  border: OutlineInputBorder(),
-                                  hintText:
-                                      'https://example.com, data:text/html,..., or raw <html>...',
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            FilledButton(
-                              onPressed: () {
-                                debugPrint(
-                                  'flutter_servo: load button pressed',
-                                );
-                                setState(() {
-                                  _activeContent = _urlController.text;
-                                  _activeContentType = _isHtmlInput
-                                      ? FlutterServoContentType.html
-                                      : FlutterServoContentType.url;
-                                  _nativeLoadInProgress = true;
-                                  _reloadRevision++;
-                                });
-                              },
-                              child: const Text('Load'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Expanded(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(28),
-                        gradient: const LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [Color(0xFFFDFBF7), Color(0xFFE7F0EE)],
-                        ),
-                        border: Border.all(color: const Color(0xFFC9D8D2)),
-                      ),
-                      child: Padding(
-                        padding: const EdgeInsets.all(24),
-                        child: LayoutBuilder(
-                          builder: (context, constraints) {
-                            final isWide = constraints.maxWidth >= 960;
-                            final children = [
-                              Expanded(
-                                child: _ServoSurfaceCard(
-                                  html: data.initialHtml,
-                                  content: _activeContent,
-                                  useHtmlContent:
-                                      _activeContentType ==
-                                      FlutterServoContentType.html,
-                                  reloadRevision: _reloadRevision,
-                                  enableInputPlumbing: _nativeInputEnabled,
-                                  isLoading: _nativeLoadInProgress,
-                                  onLoadStateChanged: _setNativeLoadInProgress,
-                                  viewportMode: _viewportMode,
-                                ),
-                              ),
-                              SizedBox(
-                                width: isWide ? 20 : 0,
-                                height: isWide ? 0 : 20,
-                              ),
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  child: Column(
-                                    children: [
-                                      _StatusCard(
-                                        currentUrl: _urlController.text,
-                                        contentMode: _activeContent.isEmpty
-                                            ? 'Idle'
-                                            : _nativeLoadInProgress
-                                            ? 'Loading'
-                                            : _activeContentType ==
-                                                  FlutterServoContentType.html
-                                            ? 'HTML'
-                                            : 'URL/Data URL',
-                                        isLoading: _nativeLoadInProgress,
-                                      ),
-                                      const SizedBox(height: 20),
-                                      _InputPlumbingCard(
-                                        enabled: _nativeInputEnabled,
-                                        onChanged: _setNativeInputEnabled,
-                                      ),
-                                      const SizedBox(height: 20),
-                                      _ViewportModeCard(
-                                        mode: _viewportMode,
-                                        onChanged: _setViewportMode,
-                                      ),
-                                      const SizedBox(height: 20),
-                                      _QuickLoadCard(
-                                        title: 'RichYoung.ca',
-                                        subtitle:
-                                            'Load the public site into Servo with one tap.',
-                                        url: _richYoungUrl,
-                                        onTap: _loadRichYoung,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ];
-                            return isWide
-                                ? Row(children: children)
-                                : Column(children: children);
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _ServoSurfaceCard extends StatelessWidget {
-  const _ServoSurfaceCard({
-    required this.html,
-    required this.content,
-    required this.useHtmlContent,
-    required this.reloadRevision,
-    required this.enableInputPlumbing,
-    required this.isLoading,
-    required this.onLoadStateChanged,
-    required this.viewportMode,
-  });
-
-  final String html;
-  final String content;
-  final bool useHtmlContent;
-  final int reloadRevision;
-  final bool enableInputPlumbing;
-  final bool isLoading;
-  final ValueChanged<bool> onLoadStateChanged;
-  final _ViewportMode viewportMode;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    final fallback = DecoratedBox(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(18),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF6EFE1), Color(0xFFE8E1D3)],
-        ),
-        border: Border.all(color: const Color(0xFFCFBFA5)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
         child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            DecoratedBox(
-              decoration: BoxDecoration(
-                color: const Color(0xFF1E2E2A),
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                child: Text(
-                  'FLUTTER PREVIEW',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-              ),
+            _BrowserIdentity(isLoading: _isLoading),
+            _BrowserToolbar(
+              addressController: _addressController,
+              addressFocusNode: _addressFocusNode,
+              canGoBack: _canGoBack,
+              canGoForward: _canGoForward,
+              isLoading: _isLoading,
+              viewportMode: _viewportMode,
+              onBack: _goBack,
+              onForward: _goForward,
+              onReload: _reload,
+              onSubmit: _navigate,
+              onViewportModeChanged: _setViewportMode,
             ),
-            const SizedBox(height: 14),
-            Text(
-              'This is the fallback renderer.',
-              style: textTheme.titleMedium?.copyWith(
-                color: const Color(0xFF1E2E2A),
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'It stays active until you press Load, then the native Servo surface takes over.',
-              style: textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF5E6B67),
-              ),
-            ),
-            const SizedBox(height: 14),
             Expanded(
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8F5EE),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFD8CCB8)),
-                ),
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.all(16),
-                  child: SelectableText(
-                    html,
-                    style: textTheme.bodyMedium?.copyWith(
-                      fontFamily: 'monospace',
-                      color: const Color(0xFF243331),
-                      height: 1.4,
-                    ),
-                  ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: _BrowserViewport(
+                  content: _content,
+                  contentType: _contentType,
+                  reloadRevision: _reloadRevision,
+                  isLoading: _isLoading,
+                  viewportMode: _viewportMode,
+                  onLoadStateChanged: (isLoading) {
+                    if (mounted && _isLoading != isLoading) {
+                      setState(() => _isLoading = isLoading);
+                    }
+                  },
+                  onNavigationStateChanged: _handleNavigationState,
+                  onQuickSite: _loadQuickSite,
                 ),
               ),
+            ),
+            _BrowserStatus(
+              isLoading: _isLoading,
+              viewportMode: _viewportMode,
+              currentAddress: _addressController.text,
             ),
           ],
         ),
       ),
     );
+  }
+}
 
-    final surface = content.trim().isEmpty
-        ? fallback
-        : useHtmlContent
+class _BrowserIdentity extends StatelessWidget {
+  const _BrowserIdentity({required this.isLoading});
+
+  final bool isLoading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFF29313A))),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 18,
+            height: 18,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE57345),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 9),
+          const Text(
+            'SERVO',
+            style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.8),
+          ),
+          const SizedBox(width: 10),
+          const Text('Browser MVP', style: TextStyle(color: Color(0xFF9BA8B5))),
+          const Spacer(),
+          _StatePill(label: isLoading ? 'LOADING' : 'READY', active: isLoading),
+        ],
+      ),
+    );
+  }
+}
+
+class _BrowserToolbar extends StatelessWidget {
+  const _BrowserToolbar({
+    required this.addressController,
+    required this.addressFocusNode,
+    required this.canGoBack,
+    required this.canGoForward,
+    required this.isLoading,
+    required this.viewportMode,
+    required this.onBack,
+    required this.onForward,
+    required this.onReload,
+    required this.onSubmit,
+    required this.onViewportModeChanged,
+  });
+
+  final TextEditingController addressController;
+  final FocusNode addressFocusNode;
+  final bool canGoBack;
+  final bool canGoForward;
+  final bool isLoading;
+  final _ViewportMode viewportMode;
+  final Future<void> Function() onBack;
+  final Future<void> Function() onForward;
+  final Future<void> Function() onReload;
+  final VoidCallback onSubmit;
+  final ValueChanged<_ViewportMode> onViewportModeChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFF171D24),
+        border: Border(bottom: BorderSide(color: Color(0xFF29313A))),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 720;
+          final navigation = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Back',
+                onPressed: canGoBack && !isLoading ? () => onBack() : null,
+                icon: const Icon(Icons.arrow_back_rounded),
+              ),
+              IconButton(
+                tooltip: 'Forward',
+                onPressed: canGoForward && !isLoading
+                    ? () => onForward()
+                    : null,
+                icon: const Icon(Icons.arrow_forward_rounded),
+              ),
+              IconButton(
+                tooltip: 'Reload',
+                onPressed: isLoading ? null : () => onReload(),
+                icon: isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.refresh_rounded),
+              ),
+            ],
+          );
+          final address = TextField(
+            controller: addressController,
+            focusNode: addressFocusNode,
+            onSubmitted: (_) => onSubmit(),
+            textInputAction: TextInputAction.go,
+            decoration: InputDecoration(
+              isDense: true,
+              prefixIcon: const Icon(Icons.travel_explore_outlined, size: 19),
+              suffixIcon: IconButton(
+                tooltip: 'Open address',
+                onPressed: onSubmit,
+                icon: const Icon(Icons.arrow_upward_rounded, size: 19),
+              ),
+              hintText: 'Search or enter an address',
+              filled: true,
+              fillColor: const Color(0xFF0E1319),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF34404C)),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: const BorderSide(color: Color(0xFF34404C)),
+              ),
+            ),
+            style: theme.textTheme.bodyMedium,
+          );
+          final mode = SegmentedButton<_ViewportMode>(
+            showSelectedIcon: false,
+            segments: const [
+              ButtonSegment(
+                value: _ViewportMode.desktop,
+                icon: Icon(Icons.desktop_windows_outlined, size: 17),
+                tooltip: 'Desktop viewport',
+              ),
+              ButtonSegment(
+                value: _ViewportMode.mobile,
+                icon: Icon(Icons.phone_android_outlined, size: 17),
+                tooltip: 'Mobile viewport',
+              ),
+            ],
+            selected: {viewportMode},
+            onSelectionChanged: (selection) =>
+                onViewportModeChanged(selection.single),
+          );
+
+          if (compact) {
+            return Column(
+              children: [
+                Row(children: [navigation, const SizedBox(width: 8), mode]),
+                const SizedBox(height: 8),
+                address,
+              ],
+            );
+          }
+          return Row(
+            children: [
+              navigation,
+              const SizedBox(width: 8),
+              Expanded(child: address),
+              const SizedBox(width: 10),
+              mode,
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _BrowserViewport extends StatelessWidget {
+  const _BrowserViewport({
+    required this.content,
+    required this.contentType,
+    required this.reloadRevision,
+    required this.isLoading,
+    required this.viewportMode,
+    required this.onLoadStateChanged,
+    required this.onNavigationStateChanged,
+    required this.onQuickSite,
+  });
+
+  final String content;
+  final FlutterServoContentType contentType;
+  final int reloadRevision;
+  final bool isLoading;
+  final _ViewportMode viewportMode;
+  final ValueChanged<bool> onLoadStateChanged;
+  final ValueChanged<FlutterServoNavigationState> onNavigationStateChanged;
+  final ValueChanged<String> onQuickSite;
+
+  @override
+  Widget build(BuildContext context) {
+    final fallback = _StartSurface(onQuickSite: onQuickSite);
+    final surface = contentType == FlutterServoContentType.html
         ? FlutterServoSurface.html(
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,
-            enableInputPlumbing: enableInputPlumbing,
             onLoadStateChanged: onLoadStateChanged,
+            onNavigationStateChanged: onNavigationStateChanged,
           )
         : FlutterServoSurface.url(
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,
-            enableInputPlumbing: enableInputPlumbing,
             onLoadStateChanged: onLoadStateChanged,
+            onNavigationStateChanged: onNavigationStateChanged,
           );
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        color: const Color(0xFF101C1A),
-        borderRadius: BorderRadius.circular(24),
+        color: const Color(0xFF0C1117),
+        border: Border.all(color: const Color(0xFF29313A)),
+        borderRadius: BorderRadius.circular(16),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Servo Surface',
-              style: textTheme.titleLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'This native texture is now fed by a Rust render session.',
-              style: textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFFD9E8E2),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              content.trim().isEmpty
-                  ? 'Showing the Flutter fallback preview until you load a target.'
-                  : 'Native rendering requested.',
-              style: textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFAAC4BD),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Expanded(
-              child: Stack(
-                children: [
-                  Positioned.fill(
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final width = viewportMode == _ViewportMode.mobile
-                            ? constraints.maxWidth.clamp(1.0, 390.0)
-                            : constraints.maxWidth;
-                        return Align(
-                          alignment: Alignment.topCenter,
-                          child: SizedBox(
-                            width: width,
-                            height: constraints.maxHeight,
-                            child: surface,
-                          ),
-                        );
-                      },
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final width = viewportMode == _ViewportMode.mobile
+                    ? constraints.maxWidth.clamp(1.0, 390.0)
+                    : constraints.maxWidth;
+                return Align(
+                  alignment: Alignment.topCenter,
+                  child: SizedBox(
+                    width: width,
+                    height: constraints.maxHeight,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(15),
+                      child: surface,
                     ),
                   ),
-                  if (isLoading)
-                    Positioned.fill(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          color: const Color(0xAA101C1A),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Center(
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxWidth: 280),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF6F1E7),
-                                borderRadius: BorderRadius.circular(16),
-                                border: Border.all(
-                                  color: const Color(0xFFD8CCB8),
-                                ),
-                              ),
-                              child: Padding(
-                                padding: const EdgeInsets.all(20),
-                                child: Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const CircularProgressIndicator(),
-                                    const SizedBox(height: 14),
-                                    Text(
-                                      'Loading native Servo content',
-                                      style: textTheme.titleMedium?.copyWith(
-                                        color: const Color(0xFF1E2E2A),
-                                        fontWeight: FontWeight.w700,
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Text(
-                                      'Waiting for the first painted frame.',
-                                      style: textTheme.bodySmall?.copyWith(
-                                        color: const Color(0xFF5E6B67),
-                                      ),
-                                      textAlign: TextAlign.center,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                ],
-              ),
+                );
+              },
             ),
-          ],
-        ),
+          ),
+          if (isLoading)
+            const Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+        ],
       ),
     );
   }
 }
 
-class _InputPlumbingCard extends StatelessWidget {
-  const _InputPlumbingCard({required this.enabled, required this.onChanged});
+class _StartSurface extends StatelessWidget {
+  const _StartSurface({required this.onQuickSite});
 
-  final bool enabled;
-  final ValueChanged<bool> onChanged;
+  final ValueChanged<String> onQuickSite;
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-        side: const BorderSide(color: Color(0xFFD6D0C4)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Native input plumbing',
-              style: textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Disable this to leave the Servo surface rendering only. Useful for isolating focus and event forwarding issues.',
-              style: textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF5F5A4F),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SwitchListTile.adaptive(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Forward mouse, keyboard, and focus'),
-              subtitle: Text(enabled ? 'Enabled' : 'Disabled'),
-              value: enabled,
-              onChanged: onChanged,
-            ),
-          ],
+    return DecoratedBox(
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(-0.7, -0.8),
+          radius: 1.3,
+          colors: [Color(0xFF263744), Color(0xFF10171E)],
         ),
       ),
-    );
-  }
-}
-
-class _ViewportModeCard extends StatelessWidget {
-  const _ViewportModeCard({required this.mode, required this.onChanged});
-
-  final _ViewportMode mode;
-  final ValueChanged<_ViewportMode> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Material(
-      color: Colors.white,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(24),
-        side: const BorderSide(color: Color(0xFFD6D0C4)),
-      ),
       child: Padding(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(32),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const _StatePill(label: 'SERVO 0.4', active: true),
+            const Spacer(),
             Text(
-              'Viewport mode',
-              style: textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Mobile uses a 390-pixel-wide viewport and reloads the active target.',
-              style: textTheme.bodySmall?.copyWith(
-                color: const Color(0xFF5F5A4F),
+              'A browser shell\nfor an embeddable engine.',
+              style: textTheme.displaySmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                height: 0.98,
               ),
             ),
             const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: SegmentedButton<_ViewportMode>(
-                segments: const [
-                  ButtonSegment(
-                    value: _ViewportMode.desktop,
-                    icon: Icon(Icons.desktop_windows_outlined),
-                    label: Text('Desktop'),
-                  ),
-                  ButtonSegment(
-                    value: _ViewportMode.mobile,
-                    icon: Icon(Icons.phone_android_outlined),
-                    label: Text('Mobile'),
-                  ),
-                ],
-                selected: {mode},
-                onSelectionChanged: (selection) {
-                  onChanged(selection.single);
-                },
-              ),
+            const Text(
+              'Use the address bar for URLs, search terms, data URLs, or raw HTML. The buttons below load real Servo pages.',
+              style: TextStyle(color: Color(0xFFC3CED7), height: 1.45),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _StatusCard extends StatelessWidget {
-  const _StatusCard({
-    required this.currentUrl,
-    required this.contentMode,
-    required this.isLoading,
-  });
-
-  final String currentUrl;
-  final String contentMode;
-  final bool isLoading;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Bridge Status',
-              style: textTheme.titleLarge?.copyWith(
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _StatusRow(label: 'Current target', value: currentUrl),
-            const SizedBox(height: 12),
-            _StatusRow(label: 'Content mode', value: contentMode),
-            const SizedBox(height: 12),
-            _StatusRow(
-              label: 'Load state',
-              value: isLoading ? 'Waiting for first frame' : 'Idle',
-            ),
-            const SizedBox(height: 12),
-            const _StatusRow(label: 'Package API', value: 'Ready'),
-            const SizedBox(height: 12),
-            const _StatusRow(label: 'Linux plugin', value: 'Ready'),
-            const SizedBox(height: 12),
-            const _StatusRow(label: 'Rust session bridge', value: 'Ready'),
-            const SizedBox(height: 12),
-            _StatusRow(
-              label: 'Servo renderer',
-              value: isLoading ? 'Rendering' : 'Ready',
-            ),
-            const SizedBox(height: 20),
-            Text(
-              isLoading
-                  ? 'Servo is loading the target and will replace this overlay when the first frame arrives.'
-                  : 'The example app now drives a stateful Rust session with URL or HTML content updates.',
-              style: textTheme.bodyMedium,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _QuickLoadCard extends StatelessWidget {
-  const _QuickLoadCard({
-    required this.title,
-    required this.subtitle,
-    required this.url,
-    required this.onTap,
-  });
-
-  final String title;
-  final String subtitle;
-  final String url;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF17312B), Color(0xFF10211D)],
-        ),
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFF28463E)),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              title,
-              style: textTheme.titleLarge?.copyWith(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: textTheme.bodyMedium?.copyWith(
-                color: const Color(0xFFD8E7E1),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              url,
-              style: textTheme.bodySmall?.copyWith(
-                color: const Color(0xFFA8C6BE),
-                fontFamily: 'monospace',
-              ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              child: FilledButton(
-                onPressed: onTap,
-                style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFFF0C66E),
-                  foregroundColor: const Color(0xFF13231F),
+            const SizedBox(height: 28),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                _QuickSiteButton(
+                  label: 'RichYoung.ca',
+                  icon: Icons.public,
+                  onPressed: () => onQuickSite('https://richyoung.ca'),
                 ),
-                child: const Text('Load Site'),
-              ),
+                _QuickSiteButton(
+                  label: 'Servo',
+                  icon: Icons.rocket_launch_outlined,
+                  onPressed: () => onQuickSite('https://servo.org'),
+                ),
+                _QuickSiteButton(
+                  label: 'Search',
+                  icon: Icons.search,
+                  onPressed: () => onQuickSite('servo browser embedding'),
+                ),
+              ],
             ),
+            const Spacer(flex: 2),
           ],
         ),
       ),
@@ -823,40 +526,114 @@ class _QuickLoadCard extends StatelessWidget {
   }
 }
 
-class _StatusRow extends StatelessWidget {
-  const _StatusRow({required this.label, required this.value});
+class _QuickSiteButton extends StatelessWidget {
+  const _QuickSiteButton({
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+  });
 
   final String label;
-  final String value;
+  final IconData icon;
+  final VoidCallback onPressed;
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: textTheme.labelSmall?.copyWith(
-            letterSpacing: 1.1,
-            color: const Color(0xFF6E7D79),
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(value, style: textTheme.bodyLarge),
-      ],
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: Icon(icon, size: 18),
+      label: Text(label),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFFF3F6F8),
+        side: const BorderSide(color: Color(0xFF536673)),
+      ),
     );
   }
 }
 
-class BootstrapData {
-  const BootstrapData({
-    required this.greeting,
-    required this.initialUrl,
-    required this.initialHtml,
+class _BrowserStatus extends StatelessWidget {
+  const _BrowserStatus({
+    required this.isLoading,
+    required this.viewportMode,
+    required this.currentAddress,
   });
 
-  final String greeting;
-  final String initialUrl;
-  final String initialHtml;
+  final bool isLoading;
+  final _ViewportMode viewportMode;
+  final String currentAddress;
+
+  @override
+  Widget build(BuildContext context) {
+    final host = Uri.tryParse(currentAddress)?.host;
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        color: Color(0xFF171D24),
+        border: Border(top: BorderSide(color: Color(0xFF29313A))),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            isLoading ? Icons.sync : Icons.lock_outline,
+            size: 14,
+            color: isLoading
+                ? const Color(0xFFE9B44C)
+                : const Color(0xFF77C6A2),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              isLoading
+                  ? 'Servo is painting a new frame'
+                  : (host?.isNotEmpty ?? false)
+                  ? host!
+                  : 'Local document',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12, color: Color(0xFF9BA8B5)),
+            ),
+          ),
+          Text(
+            viewportMode == _ViewportMode.mobile ? '390px MOBILE' : 'DESKTOP',
+            style: const TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.1,
+              color: Color(0xFF9BA8B5),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatePill extends StatelessWidget {
+  const _StatePill({required this.label, required this.active});
+
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFF473A28) : const Color(0xFF202A33),
+        borderRadius: BorderRadius.circular(99),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 1.1,
+            color: active ? const Color(0xFFEFD094) : const Color(0xFFB5C1CB),
+          ),
+        ),
+      ),
+    );
+  }
 }

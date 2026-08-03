@@ -28,6 +28,22 @@ bool rust_render_bridge_set_html(RustRenderBridge* self,
                                  RustRenderSessionHandle session,
                                  const char* html);
 
+bool rust_render_bridge_go_back(RustRenderBridge* self,
+                                RustRenderSessionHandle session);
+
+bool rust_render_bridge_go_forward(RustRenderBridge* self,
+                                   RustRenderSessionHandle session);
+
+bool rust_render_bridge_reload(RustRenderBridge* self,
+                               RustRenderSessionHandle session);
+
+bool rust_render_bridge_get_navigation_state(RustRenderBridge* self,
+                                             RustRenderSessionHandle session,
+                                             char* url_out,
+                                             size_t url_out_len,
+                                             bool* can_go_back_out,
+                                             bool* can_go_forward_out);
+
 bool rust_render_bridge_notify_mouse_move(RustRenderBridge* self,
                                           RustRenderSessionHandle session,
                                           int32_t x,

@@ -10,6 +10,12 @@ using FlutterServoSessionNewFn = void* (*)(const char* http_proxy_uri,
                                            const char* no_proxy);
 using FlutterServoSessionFreeFn = void (*)(void* session);
 using FlutterServoSessionSetTextFn = bool (*)(void* session, const char* text);
+using FlutterServoSessionCommandFn = bool (*)(void* session);
+using FlutterServoSessionNavigationStateFn = bool (*)(const void* session,
+                                                      char* url_out,
+                                                      size_t url_out_len,
+                                                      bool* can_go_back_out,
+                                                      bool* can_go_forward_out);
 using FlutterServoSessionNotifyMouseMoveFn = bool (*)(void* session, int32_t x, int32_t y);
 using FlutterServoSessionNotifyMouseButtonFn =
     bool (*)(void* session, int32_t x, int32_t y, uint8_t button, bool is_down);
@@ -52,6 +58,10 @@ struct _RustRenderBridge {
   FlutterServoSessionFreeFn session_free;
   FlutterServoSessionSetTextFn session_set_url;
   FlutterServoSessionSetTextFn session_set_html;
+  FlutterServoSessionCommandFn session_go_back;
+  FlutterServoSessionCommandFn session_go_forward;
+  FlutterServoSessionCommandFn session_reload;
+  FlutterServoSessionNavigationStateFn session_get_navigation_state;
   FlutterServoSessionNotifyMouseMoveFn session_notify_mouse_move;
   FlutterServoSessionNotifyMouseButtonFn session_notify_mouse_button;
   FlutterServoSessionNotifyMouseLeaveViewportFn session_notify_mouse_leave_viewport;
@@ -73,6 +83,14 @@ RustRenderBridge* rust_render_bridge_new() {
       RTLD_DEFAULT, "flutter_servo_session_set_url");
   auto session_set_html = resolve_symbol<FlutterServoSessionSetTextFn>(
       RTLD_DEFAULT, "flutter_servo_session_set_html");
+  auto session_go_back = resolve_symbol<FlutterServoSessionCommandFn>(
+      RTLD_DEFAULT, "flutter_servo_session_go_back");
+  auto session_go_forward = resolve_symbol<FlutterServoSessionCommandFn>(
+      RTLD_DEFAULT, "flutter_servo_session_go_forward");
+  auto session_reload = resolve_symbol<FlutterServoSessionCommandFn>(
+      RTLD_DEFAULT, "flutter_servo_session_reload");
+  auto session_get_navigation_state = resolve_symbol<FlutterServoSessionNavigationStateFn>(
+      RTLD_DEFAULT, "flutter_servo_session_get_navigation_state");
   auto session_notify_mouse_move = resolve_symbol<FlutterServoSessionNotifyMouseMoveFn>(
       RTLD_DEFAULT, "flutter_servo_session_notify_mouse_move");
   auto session_notify_mouse_button =
@@ -95,6 +113,8 @@ RustRenderBridge* rust_render_bridge_new() {
 
   if (session_new == nullptr || session_free == nullptr ||
       session_set_url == nullptr || session_set_html == nullptr ||
+      session_go_back == nullptr || session_go_forward == nullptr ||
+      session_reload == nullptr || session_get_navigation_state == nullptr ||
       session_notify_mouse_move == nullptr || session_notify_mouse_button == nullptr ||
       session_notify_mouse_leave_viewport == nullptr || session_notify_mouse_wheel == nullptr ||
       session_notify_key_event == nullptr || session_focus_webview == nullptr ||
@@ -120,6 +140,14 @@ RustRenderBridge* rust_render_bridge_new() {
         handle, "flutter_servo_session_set_url");
     session_set_html = resolve_symbol<FlutterServoSessionSetTextFn>(
         handle, "flutter_servo_session_set_html");
+    session_go_back = resolve_symbol<FlutterServoSessionCommandFn>(
+        handle, "flutter_servo_session_go_back");
+    session_go_forward = resolve_symbol<FlutterServoSessionCommandFn>(
+        handle, "flutter_servo_session_go_forward");
+    session_reload = resolve_symbol<FlutterServoSessionCommandFn>(
+        handle, "flutter_servo_session_reload");
+    session_get_navigation_state = resolve_symbol<FlutterServoSessionNavigationStateFn>(
+        handle, "flutter_servo_session_get_navigation_state");
     session_notify_mouse_move = resolve_symbol<FlutterServoSessionNotifyMouseMoveFn>(
         handle, "flutter_servo_session_notify_mouse_move");
     session_notify_mouse_button =
@@ -141,6 +169,8 @@ RustRenderBridge* rust_render_bridge_new() {
         handle, "flutter_servo_session_render_rgba");
     if (session_new == nullptr || session_free == nullptr ||
         session_set_url == nullptr || session_set_html == nullptr ||
+        session_go_back == nullptr || session_go_forward == nullptr ||
+        session_reload == nullptr || session_get_navigation_state == nullptr ||
         session_notify_mouse_move == nullptr || session_notify_mouse_button == nullptr ||
         session_notify_mouse_leave_viewport == nullptr || session_notify_mouse_wheel == nullptr ||
         session_notify_key_event == nullptr || session_focus_webview == nullptr ||
@@ -159,6 +189,10 @@ RustRenderBridge* rust_render_bridge_new() {
   self->session_free = session_free;
   self->session_set_url = session_set_url;
   self->session_set_html = session_set_html;
+  self->session_go_back = session_go_back;
+  self->session_go_forward = session_go_forward;
+  self->session_reload = session_reload;
+  self->session_get_navigation_state = session_get_navigation_state;
   self->session_notify_mouse_move = session_notify_mouse_move;
   self->session_notify_mouse_button = session_notify_mouse_button;
   self->session_notify_mouse_leave_viewport = session_notify_mouse_leave_viewport;
@@ -220,6 +254,37 @@ bool rust_render_bridge_set_html(RustRenderBridge* self,
                                  const char* html) {
   return self != nullptr && self->session_set_html != nullptr &&
          session != nullptr && self->session_set_html(session, html);
+}
+
+bool rust_render_bridge_go_back(RustRenderBridge* self,
+                                RustRenderSessionHandle session) {
+  return self != nullptr && self->session_go_back != nullptr &&
+         session != nullptr && self->session_go_back(session);
+}
+
+bool rust_render_bridge_go_forward(RustRenderBridge* self,
+                                   RustRenderSessionHandle session) {
+  return self != nullptr && self->session_go_forward != nullptr &&
+         session != nullptr && self->session_go_forward(session);
+}
+
+bool rust_render_bridge_reload(RustRenderBridge* self,
+                               RustRenderSessionHandle session) {
+  return self != nullptr && self->session_reload != nullptr &&
+         session != nullptr && self->session_reload(session);
+}
+
+bool rust_render_bridge_get_navigation_state(
+    RustRenderBridge* self,
+    RustRenderSessionHandle session,
+    char* url_out,
+    size_t url_out_len,
+    bool* can_go_back_out,
+    bool* can_go_forward_out) {
+  return self != nullptr && self->session_get_navigation_state != nullptr &&
+         session != nullptr &&
+         self->session_get_navigation_state(session, url_out, url_out_len,
+                                            can_go_back_out, can_go_forward_out);
 }
 
 bool rust_render_bridge_notify_mouse_move(RustRenderBridge* self,

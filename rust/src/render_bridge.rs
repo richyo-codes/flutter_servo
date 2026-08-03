@@ -220,6 +220,51 @@ mod imp {
             true
         }
 
+        fn go_back(&mut self) -> bool {
+            let Some(webview) = self.webview.as_ref() else {
+                return false;
+            };
+            if !webview.can_go_back() {
+                return false;
+            }
+            self.delegate.begin_navigation();
+            webview.go_back(1);
+            true
+        }
+
+        fn go_forward(&mut self) -> bool {
+            let Some(webview) = self.webview.as_ref() else {
+                return false;
+            };
+            if !webview.can_go_forward() {
+                return false;
+            }
+            self.delegate.begin_navigation();
+            webview.go_forward(1);
+            true
+        }
+
+        fn reload(&mut self) -> bool {
+            let Some(webview) = self.webview.as_ref() else {
+                return false;
+            };
+            self.delegate.begin_navigation();
+            webview.reload();
+            true
+        }
+
+        fn navigation_state(&self) -> Option<(String, bool, bool)> {
+            self.webview.as_ref().map(|webview| {
+                (
+                    webview
+                        .url()
+                        .map_or_else(String::new, |url| url.to_string()),
+                    webview.can_go_back(),
+                    webview.can_go_forward(),
+                )
+            })
+        }
+
         fn send_mouse_move(&self, x: i32, y: i32) -> bool {
             self.webview
                 .as_ref()
@@ -604,6 +649,60 @@ mod imp {
     }
 
     #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_go_back(session: *mut c_void) -> bool {
+        session
+            .cast::<ServoRenderSession>()
+            .as_mut()
+            .is_some_and(ServoRenderSession::go_back)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_go_forward(session: *mut c_void) -> bool {
+        session
+            .cast::<ServoRenderSession>()
+            .as_mut()
+            .is_some_and(ServoRenderSession::go_forward)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_reload(session: *mut c_void) -> bool {
+        session
+            .cast::<ServoRenderSession>()
+            .as_mut()
+            .is_some_and(ServoRenderSession::reload)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_get_navigation_state(
+        session: *const c_void,
+        url_out: *mut c_char,
+        url_out_len: usize,
+        can_go_back_out: *mut bool,
+        can_go_forward_out: *mut bool,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        let Some((url, can_go_back, can_go_forward)) = session.navigation_state() else {
+            return false;
+        };
+        if url_out.is_null()
+            || url_out_len == 0
+            || can_go_back_out.is_null()
+            || can_go_forward_out.is_null()
+        {
+            return false;
+        }
+        let bytes = url.as_bytes();
+        let copy_len = bytes.len().min(url_out_len - 1);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), url_out.cast::<u8>(), copy_len);
+        *url_out.add(copy_len) = 0;
+        *can_go_back_out = can_go_back;
+        *can_go_forward_out = can_go_forward;
+        true
+    }
+
+    #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_notify_mouse_move(
         session: *mut c_void,
         x: i32,
@@ -790,6 +889,52 @@ mod imp {
         };
 
         session.content = DemoContent::Html(html.to_owned());
+        true
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_go_back(_session: *mut c_void) -> bool {
+        false
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_go_forward(_session: *mut c_void) -> bool {
+        false
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_reload(session: *mut c_void) -> bool {
+        !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_get_navigation_state(
+        session: *const c_void,
+        url_out: *mut c_char,
+        url_out_len: usize,
+        can_go_back_out: *mut bool,
+        can_go_forward_out: *mut bool,
+    ) -> bool {
+        let Some(session) = session.cast::<DemoSession>().as_ref() else {
+            return false;
+        };
+        if url_out.is_null()
+            || url_out_len == 0
+            || can_go_back_out.is_null()
+            || can_go_forward_out.is_null()
+        {
+            return false;
+        }
+        let url = match &session.content {
+            DemoContent::Url(value) => value.as_str(),
+            DemoContent::Html(_) => "data:text/html",
+        };
+        let bytes = url.as_bytes();
+        let copy_len = bytes.len().min(url_out_len - 1);
+        std::ptr::copy_nonoverlapping(bytes.as_ptr(), url_out.cast::<u8>(), copy_len);
+        *url_out.add(copy_len) = 0;
+        *can_go_back_out = false;
+        *can_go_forward_out = false;
         true
     }
 

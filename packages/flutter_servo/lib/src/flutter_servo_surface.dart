@@ -14,6 +14,18 @@ enum FlutterServoContentType {
   final String methodName;
 }
 
+class FlutterServoNavigationState {
+  const FlutterServoNavigationState({
+    required this.url,
+    required this.canGoBack,
+    required this.canGoForward,
+  });
+
+  final String url;
+  final bool canGoBack;
+  final bool canGoForward;
+}
+
 class FlutterServoSurface extends StatefulWidget {
   const FlutterServoSurface.url({
     super.key,
@@ -21,6 +33,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.onLoadStateChanged,
+    this.onNavigationStateChanged,
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.url;
 
@@ -30,6 +43,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.onLoadStateChanged,
+    this.onNavigationStateChanged,
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.html;
 
@@ -38,6 +52,7 @@ class FlutterServoSurface extends StatefulWidget {
   final Widget fallback;
   final bool enableInputPlumbing;
   final ValueChanged<bool>? onLoadStateChanged;
+  final ValueChanged<FlutterServoNavigationState>? onNavigationStateChanged;
   final int reloadRevision;
 
   @override
@@ -91,6 +106,31 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   static Future<void> _handlePlatformMethodCall(MethodCall call) async {
+    if (call.method == 'navigationStateChanged') {
+      final arguments = call.arguments;
+      if (arguments is! List ||
+          arguments.length != 3 ||
+          arguments[0] is! String ||
+          arguments[1] is! bool ||
+          arguments[2] is! bool) {
+        throw PlatformException(
+          code: 'invalid-navigation-state',
+          message: 'Expected [url, canGoBack, canGoForward] from Linux.',
+        );
+      }
+      final state = FlutterServoNavigationState(
+        url: arguments[0] as String,
+        canGoBack: arguments[1] as bool,
+        canGoForward: arguments[2] as bool,
+      );
+      for (final listener in _loadStateListeners.toList()) {
+        if (listener.mounted) {
+          listener.widget.onNavigationStateChanged?.call(state);
+        }
+      }
+      return;
+    }
+
     if (call.method != 'loadStateChanged') {
       throw MissingPluginException('Unhandled native method: ${call.method}');
     }
