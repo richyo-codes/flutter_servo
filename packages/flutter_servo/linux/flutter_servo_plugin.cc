@@ -512,7 +512,6 @@ static FlMethodResponse* handle_notify_mouse_button(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward mouse button.", nullptr));
   }
-  render_texture(self, "mouse-button");
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -542,7 +541,6 @@ static FlMethodResponse* handle_notify_mouse_wheel(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward mouse wheel.", nullptr));
   }
-  render_texture(self, "mouse-wheel");
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -562,7 +560,6 @@ static FlMethodResponse* handle_notify_key_event(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward key event.", nullptr));
   }
-  render_texture(self, "key-event");
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 

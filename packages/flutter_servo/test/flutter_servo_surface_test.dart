@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/material.dart';
@@ -159,6 +160,56 @@ void main() {
     await tester.pump(const Duration(milliseconds: 120));
 
     expect(refreshAttempts, greaterThanOrEqualTo(2));
+  });
+
+  testWidgets('coalesces refresh requests while a native render is active', (
+    tester,
+  ) async {
+    final firstRefresh = Completer<void>();
+    var refreshAttempts = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          if (call.method == 'refreshTexture') {
+            refreshAttempts++;
+            if (refreshAttempts == 1) {
+              await firstRefresh.future;
+            }
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 200,
+          height: 100,
+          child: FlutterServoSurface.html(
+            content: '<p>Coalesced frame</p>',
+            fallback: const ColoredBox(color: Colors.white),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(refreshAttempts, 1);
+
+    final surface = find.byType(FlutterServoSurface);
+    final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await pointer.addPointer(location: tester.getCenter(surface));
+    await pointer.moveTo(tester.getCenter(surface) + const Offset(10, 0));
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(refreshAttempts, 1);
+
+    firstRefresh.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(refreshAttempts, 2);
   });
 
   testWidgets('debounces texture resize to the settled dimensions', (

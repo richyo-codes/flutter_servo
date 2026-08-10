@@ -75,6 +75,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   int? _textureHeight;
   bool _syncQueued = false;
   bool _deferredRefreshQueued = false;
+  bool _refreshInFlight = false;
+  bool _refreshRequested = false;
   int _refreshAttemptsRemaining = 0;
   Timer? _deferredRefreshTimer;
   Timer? _resizeSyncTimer;
@@ -180,6 +182,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   void _queueDeferredTextureRefresh() {
     _refreshAttemptsRemaining = _maxRefreshAttempts;
+    _refreshRequested = true;
     _scheduleDeferredTextureRefresh(_deferredRefreshDelay);
   }
 
@@ -199,6 +202,14 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         _scheduleDeferredTextureRefresh(_refreshRetryDelay);
         return;
       }
+      if (_refreshInFlight) {
+        _refreshRequested = true;
+        return;
+      }
+
+      _refreshInFlight = true;
+      _refreshRequested = false;
+      var retry = false;
       try {
         await _channel.invokeMethod<void>('refreshTexture');
       } on MissingPluginException {
@@ -206,7 +217,14 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       } on PlatformException {
         if (mounted && _refreshAttemptsRemaining > 0) {
           _refreshAttemptsRemaining--;
-          _scheduleDeferredTextureRefresh(_refreshRetryDelay);
+          retry = true;
+        }
+      } finally {
+        _refreshInFlight = false;
+        if (mounted && (retry || _refreshRequested)) {
+          _scheduleDeferredTextureRefresh(
+            retry ? _refreshRetryDelay : _deferredRefreshDelay,
+          );
         }
       }
     });
