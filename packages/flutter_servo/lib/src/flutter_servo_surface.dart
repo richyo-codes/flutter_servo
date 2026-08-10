@@ -62,6 +62,8 @@ class FlutterServoSurface extends StatefulWidget {
 class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   static const MethodChannel _channel = MethodChannel('flutter_servo');
   static const Duration _deferredRefreshDelay = Duration(milliseconds: 32);
+  static const Duration _refreshRetryDelay = Duration(milliseconds: 100);
+  static const int _maxRefreshAttempts = 20;
   static const Duration _resizeSyncDelay = Duration(milliseconds: 80);
   static final Set<_FlutterServoSurfaceState> _loadStateListeners = {};
 
@@ -73,6 +75,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   int? _textureHeight;
   bool _syncQueued = false;
   bool _deferredRefreshQueued = false;
+  int _refreshAttemptsRemaining = 0;
   Timer? _deferredRefreshTimer;
   Timer? _resizeSyncTimer;
   bool _contentUpdateInFlight = false;
@@ -176,25 +179,35 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   void _queueDeferredTextureRefresh() {
+    _refreshAttemptsRemaining = _maxRefreshAttempts;
+    _scheduleDeferredTextureRefresh(_deferredRefreshDelay);
+  }
+
+  void _scheduleDeferredTextureRefresh(Duration delay) {
     if (_deferredRefreshQueued) {
       return;
     }
 
     _deferredRefreshQueued = true;
     _deferredRefreshTimer?.cancel();
-    _deferredRefreshTimer = Timer(_deferredRefreshDelay, () async {
+    _deferredRefreshTimer = Timer(delay, () async {
       _deferredRefreshQueued = false;
       if (!mounted || _textureId == null || widget.content.trim().isEmpty) {
         return;
       }
       if (_contentUpdateInFlight) {
-        _queueDeferredTextureRefresh();
+        _scheduleDeferredTextureRefresh(_refreshRetryDelay);
         return;
       }
       try {
         await _channel.invokeMethod<void>('refreshTexture');
       } on MissingPluginException {
         // The fallback remains visible on unsupported platforms.
+      } on PlatformException {
+        if (mounted && _refreshAttemptsRemaining > 0) {
+          _refreshAttemptsRemaining--;
+          _scheduleDeferredTextureRefresh(_refreshRetryDelay);
+        }
       }
     });
   }

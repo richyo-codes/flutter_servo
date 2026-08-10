@@ -110,13 +110,13 @@ mod imp {
 
     #[derive(Default)]
     struct SessionDelegate {
-        load_complete: Cell<bool>,
+        document_ready: Cell<bool>,
         frame_ready: Cell<bool>,
     }
 
     impl SessionDelegate {
         fn begin_navigation(&self) {
-            self.load_complete.set(false);
+            self.document_ready.set(false);
             self.frame_ready.set(false);
         }
 
@@ -125,7 +125,11 @@ mod imp {
         }
 
         fn is_scene_ready(&self) -> bool {
-            self.load_complete.get() && self.frame_ready.get()
+            self.document_ready.get() && self.frame_ready.get()
+        }
+
+        fn has_frame(&self) -> bool {
+            self.frame_ready.get()
         }
     }
 
@@ -138,8 +142,8 @@ mod imp {
 
         fn notify_load_status_changed(&self, _webview: WebView, status: LoadStatus) {
             eprintln!("flutter_servo: rust delegate load status {status:?}");
-            if status == LoadStatus::Complete {
-                self.load_complete.set(true);
+            if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete) {
+                self.document_ready.set(true);
             }
         }
     }
@@ -467,9 +471,17 @@ mod imp {
 
             if !self.delegate.is_scene_ready() {
                 eprintln!("flutter_servo: rust render waiting for scene readiness");
-                if !self.spin_until(Duration::from_secs(15), || self.delegate.is_scene_ready()) {
-                    eprintln!("flutter_servo: rust render scene readiness timed out");
-                    return false;
+                if !self.spin_until(Duration::from_millis(250), || {
+                    self.delegate.is_scene_ready()
+                }) {
+                    if self.delegate.has_frame() {
+                        eprintln!(
+                            "flutter_servo: rust render using available frame before document readiness"
+                        );
+                    } else {
+                        eprintln!("flutter_servo: rust render frame not ready yet");
+                        return false;
+                    }
                 }
             }
 

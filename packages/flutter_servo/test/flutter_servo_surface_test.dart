@@ -119,6 +119,48 @@ void main() {
     expect(calls.where((call) => call.method == 'refreshTexture'), isNotEmpty);
   });
 
+  testWidgets('retries refresh when the first native frame is unavailable', (
+    tester,
+  ) async {
+    var refreshAttempts = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          if (call.method == 'refreshTexture') {
+            refreshAttempts++;
+            if (refreshAttempts == 1) {
+              throw PlatformException(
+                code: 'render-failed',
+                message: 'Frame is not ready yet.',
+              );
+            }
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 200,
+          height: 100,
+          child: FlutterServoSurface.html(
+            content: '<p>Delayed frame</p>',
+            fallback: const ColoredBox(color: Colors.white),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(refreshAttempts, greaterThanOrEqualTo(2));
+  });
+
   testWidgets('debounces texture resize to the settled dimensions', (
     tester,
   ) async {

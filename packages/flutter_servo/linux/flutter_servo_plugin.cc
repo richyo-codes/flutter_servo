@@ -426,11 +426,9 @@ static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "session-update-failed", "Failed to set URL content.", nullptr));
   }
-  if (!render_texture(self, url)) {
-    send_load_state_changed(self, false);
-    return FL_METHOD_RESPONSE(fl_method_error_response_new(
-        "render-failed", "Failed to render URL content.", nullptr));
-  }
+  // Navigation is accepted even when its first frame is not ready yet. Dart
+  // schedules bounded refresh attempts without blocking the platform thread.
+  render_texture(self, url);
   send_load_state_changed(self, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
@@ -451,11 +449,7 @@ static FlMethodResponse* handle_set_html(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "session-update-failed", "Failed to set HTML content.", nullptr));
   }
-  if (!render_texture(self, html)) {
-    send_load_state_changed(self, false);
-    return FL_METHOD_RESPONSE(fl_method_error_response_new(
-        "render-failed", "Failed to render HTML content.", nullptr));
-  }
+  render_texture(self, html);
   send_load_state_changed(self, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
