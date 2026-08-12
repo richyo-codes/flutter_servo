@@ -212,6 +212,45 @@ void main() {
     expect(refreshAttempts, 2);
   });
 
+  testWidgets('pumps frames while Servo reports active animation', (
+    tester,
+  ) async {
+    var refreshAttempts = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          if (call.method == 'refreshTexture') {
+            refreshAttempts++;
+            return refreshAttempts < 3;
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 200,
+          height: 100,
+          child: FlutterServoSurface.html(
+            content: '<p>Animated frame</p>',
+            fallback: const ColoredBox(color: Colors.white),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump(const Duration(milliseconds: 20));
+    await tester.pump(const Duration(milliseconds: 40));
+
+    expect(refreshAttempts, 3);
+  });
+
   testWidgets('debounces texture resize to the settled dimensions', (
     tester,
   ) async {

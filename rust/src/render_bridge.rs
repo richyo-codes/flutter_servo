@@ -112,6 +112,7 @@ mod imp {
     struct SessionDelegate {
         document_ready: Cell<bool>,
         frame_ready: Cell<bool>,
+        animating: Cell<bool>,
     }
 
     impl SessionDelegate {
@@ -145,6 +146,10 @@ mod imp {
             if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete) {
                 self.document_ready.set(true);
             }
+        }
+
+        fn notify_animating_changed(&self, _webview: WebView, animating: bool) {
+            self.animating.set(animating);
         }
     }
 
@@ -267,6 +272,10 @@ mod imp {
                     webview.can_go_forward(),
                 )
             })
+        }
+
+        fn is_animating(&self) -> bool {
+            self.delegate.animating.get()
         }
 
         fn send_mouse_move(&self, x: i32, y: i32) -> bool {
@@ -685,6 +694,14 @@ mod imp {
     }
 
     #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_is_animating(session: *const c_void) -> bool {
+        session
+            .cast::<ServoRenderSession>()
+            .as_ref()
+            .is_some_and(ServoRenderSession::is_animating)
+    }
+
+    #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_get_navigation_state(
         session: *const c_void,
         url_out: *mut c_char,
@@ -917,6 +934,11 @@ mod imp {
     #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_reload(session: *mut c_void) -> bool {
         !session.is_null()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_is_animating(_session: *const c_void) -> bool {
+        false
     }
 
     #[no_mangle]
