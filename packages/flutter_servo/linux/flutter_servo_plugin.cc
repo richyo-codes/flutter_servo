@@ -22,9 +22,23 @@ struct _FlutterServoPlugin {
   gchar* http_proxy_uri;
   gchar* https_proxy_uri;
   gchar* no_proxy;
+  guint frame_source_id;
 };
 
 G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
+
+static bool render_texture(FlutterServoPlugin* self,
+                           const gchar* fallback_seed,
+                           bool paint_fallback);
+
+static gboolean pump_servo_frame(gpointer user_data) {
+  FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(user_data);
+  if (self->session != nullptr && self->texture != nullptr &&
+      rust_render_bridge_poll(self->rust_render_bridge, self->session)) {
+    render_texture(self, "frame-pump", false);
+  }
+  return G_SOURCE_CONTINUE;
+}
 
 static void send_load_state_changed(FlutterServoPlugin* self, bool is_loading) {
   if (self == nullptr || self->method_channel == nullptr) {
@@ -68,6 +82,10 @@ static bool ensure_session(FlutterServoPlugin* self) {
       self->rust_render_bridge, self->http_proxy_uri, self->https_proxy_uri, self->no_proxy);
   if (self->session == nullptr) {
     g_warning("flutter_servo: linux plugin failed to create Rust render session");
+  }
+  if (self->session != nullptr && self->frame_source_id == 0) {
+    self->frame_source_id = g_timeout_add_full(
+        G_PRIORITY_HIGH_IDLE, 16, pump_servo_frame, self, nullptr);
   }
   return self->session != nullptr;
 }
@@ -568,6 +586,10 @@ static FlMethodResponse* handle_notify_key_event(FlutterServoPlugin* self,
 
 static void flutter_servo_plugin_dispose(GObject* object) {
   FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(object);
+  if (self->frame_source_id != 0) {
+    g_source_remove(self->frame_source_id);
+    self->frame_source_id = 0;
+  }
   g_clear_object(&self->texture);
   rust_render_bridge_destroy_session(self->rust_render_bridge, self->session);
   self->session = nullptr;
@@ -594,6 +616,7 @@ static void flutter_servo_plugin_init(FlutterServoPlugin* self) {
   self->http_proxy_uri = nullptr;
   self->https_proxy_uri = nullptr;
   self->no_proxy = nullptr;
+  self->frame_source_id = 0;
 }
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,

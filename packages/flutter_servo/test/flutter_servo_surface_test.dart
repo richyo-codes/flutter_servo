@@ -212,7 +212,7 @@ void main() {
     expect(refreshAttempts, 2);
   });
 
-  testWidgets('pumps frames while Servo reports active animation', (
+  testWidgets('leaves animated frame pumping to the native renderer', (
     tester,
   ) async {
     var refreshAttempts = 0;
@@ -224,7 +224,7 @@ void main() {
           }
           if (call.method == 'refreshTexture') {
             refreshAttempts++;
-            return refreshAttempts < 3;
+            return true;
           }
           return null;
         });
@@ -248,7 +248,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 20));
     await tester.pump(const Duration(milliseconds: 40));
 
-    expect(refreshAttempts, 3);
+    expect(refreshAttempts, 1);
   });
 
   testWidgets('debounces texture resize to the settled dimensions', (

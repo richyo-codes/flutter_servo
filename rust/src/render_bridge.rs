@@ -113,6 +113,7 @@ mod imp {
         document_ready: Cell<bool>,
         frame_ready: Cell<bool>,
         animating: Cell<bool>,
+        frame_epoch: Cell<u64>,
     }
 
     impl SessionDelegate {
@@ -138,6 +139,7 @@ mod imp {
         fn notify_new_frame_ready(&self, webview: WebView) {
             eprintln!("flutter_servo: rust delegate new frame ready");
             self.frame_ready.set(true);
+            self.frame_epoch.set(self.frame_epoch.get().wrapping_add(1));
             webview.paint();
         }
 
@@ -161,6 +163,8 @@ mod imp {
         content: SessionContent,
         pending_navigation: bool,
         size: PhysicalSize<u32>,
+        rendered_frame_epoch: u64,
+        wake_pending: Arc<AtomicBool>,
     }
 
     impl ServoRenderSession {
@@ -189,9 +193,10 @@ mod imp {
             }
 
             eprintln!("flutter_servo: rust session building Servo");
+            let wake_pending = Arc::new(AtomicBool::new(true));
             let servo = ServoBuilder::default()
                 .preferences(preferences)
-                .event_loop_waker(Box::new(SessionWaker(Arc::new(AtomicBool::new(false)))))
+                .event_loop_waker(Box::new(SessionWaker(wake_pending.clone())))
                 .build();
 
             eprintln!("flutter_servo: rust session creating WebView");
@@ -211,6 +216,8 @@ mod imp {
                 content: SessionContent::Html(DEFAULT_HTML.to_owned()),
                 pending_navigation: false,
                 size,
+                rendered_frame_epoch: 0,
+                wake_pending,
             })
         }
 
@@ -276,6 +283,21 @@ mod imp {
 
         fn is_animating(&self) -> bool {
             self.delegate.animating.get()
+        }
+
+        fn poll(&self) -> bool {
+            let has_pending_frame = self.delegate.frame_epoch.get() != self.rendered_frame_epoch;
+            if !self.delegate.animating.get()
+                && !has_pending_frame
+                && !self.wake_pending.swap(false, Ordering::Relaxed)
+            {
+                return false;
+            }
+            if let Some(servo) = self.servo.as_ref() {
+                servo.spin_event_loop();
+            }
+            self.delegate.animating.get()
+                || self.delegate.frame_epoch.get() != self.rendered_frame_epoch
         }
 
         fn send_mouse_move(&self, x: i32, y: i32) -> bool {
@@ -433,9 +455,13 @@ mod imp {
                 );
             }
 
-            copy_image_into_buffer(&image, width, height, unsafe {
+            let copied = copy_image_into_buffer(&image, width, height, unsafe {
                 slice::from_raw_parts_mut(out_rgba, expected_len)
-            })
+            });
+            if copied {
+                self.rendered_frame_epoch = self.delegate.frame_epoch.get();
+            }
+            copied
         }
 
         fn prepare_for_render(&mut self, width: u32, height: u32) -> bool {
@@ -702,6 +728,14 @@ mod imp {
     }
 
     #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_poll(session: *const c_void) -> bool {
+        session
+            .cast::<ServoRenderSession>()
+            .as_ref()
+            .is_some_and(ServoRenderSession::poll)
+    }
+
+    #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_get_navigation_state(
         session: *const c_void,
         url_out: *mut c_char,
@@ -938,6 +972,11 @@ mod imp {
 
     #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_is_animating(_session: *const c_void) -> bool {
+        false
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_poll(_session: *const c_void) -> bool {
         false
     }
 

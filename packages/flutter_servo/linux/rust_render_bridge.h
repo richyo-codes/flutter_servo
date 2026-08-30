@@ -40,6 +40,9 @@ bool rust_render_bridge_reload(RustRenderBridge* self,
 bool rust_render_bridge_is_animating(RustRenderBridge* self,
                                      RustRenderSessionHandle session);
 
+bool rust_render_bridge_poll(RustRenderBridge* self,
+                             RustRenderSessionHandle session);
+
 bool rust_render_bridge_get_navigation_state(RustRenderBridge* self,
                                              RustRenderSessionHandle session,
                                              char* url_out,

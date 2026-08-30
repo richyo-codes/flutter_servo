@@ -63,7 +63,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   static const MethodChannel _channel = MethodChannel('flutter_servo');
   static const Duration _deferredRefreshDelay = Duration(milliseconds: 32);
   static const Duration _refreshRetryDelay = Duration(milliseconds: 100);
-  static const Duration _animationRefreshDelay = Duration(milliseconds: 16);
   static const int _maxRefreshAttempts = 20;
   static const Duration _resizeSyncDelay = Duration(milliseconds: 80);
   static final Set<_FlutterServoSurfaceState> _loadStateListeners = {};
@@ -211,10 +210,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       _refreshInFlight = true;
       _refreshRequested = false;
       var retry = false;
-      var animating = false;
       try {
-        animating =
-            await _channel.invokeMethod<bool>('refreshTexture') ?? false;
+        await _channel.invokeMethod<bool>('refreshTexture');
       } on MissingPluginException {
         // The fallback remains visible on unsupported platforms.
       } on PlatformException {
@@ -224,13 +221,9 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         }
       } finally {
         _refreshInFlight = false;
-        if (mounted && (retry || _refreshRequested || animating)) {
+        if (mounted && (retry || _refreshRequested)) {
           _scheduleDeferredTextureRefresh(
-            retry
-                ? _refreshRetryDelay
-                : animating
-                ? _animationRefreshDelay
-                : _deferredRefreshDelay,
+            retry ? _refreshRetryDelay : _deferredRefreshDelay,
           );
         }
       }
