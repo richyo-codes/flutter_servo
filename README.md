@@ -32,6 +32,20 @@ cd packages/flutter_servo/example
 flutter run -d linux
 ```
 
+Build the GTK4 variant with the local Flutter GTK4 fork:
+
+```bash
+cd packages/flutter_servo/example
+FLUTTER_LINUX_GTK=gtk4 /path/to/flutter-gtk4/bin/flutter build linux --debug \
+  --linux-gtk=gtk4 \
+  --local-engine=host_debug_unopt \
+  --local-engine-host=host_debug_unopt \
+  --local-engine-src-path=/path/to/flutter-gtk4/engine/src
+```
+
+GTK3 is the default and remains the portable CPU-upload path. GTK4 creates an
+isolated `build/linux-gtk4` directory and is the target for EGLImage interop.
+
 Build the Rust library directly:
 
 ```bash

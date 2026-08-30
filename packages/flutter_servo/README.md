@@ -27,3 +27,7 @@ Run the example app:
 cd packages/flutter_servo/example
 flutter run -d linux
 ```
+
+The Linux example defaults to GTK3. To build GTK4 with the local Flutter GTK4
+fork, pass `--linux-gtk=gtk4` and set `FLUTTER_LINUX_GTK=gtk4`; its output is
+kept in `build/linux-gtk4` so it does not contaminate GTK3 artifacts.
