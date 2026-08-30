@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstdint>
-#include <cstdlib>
 
 #include <epoxy/gl.h>
 #include <gtk/gtk.h>
@@ -12,7 +11,9 @@ struct _ServoTexture {
 
   uint32_t width;
   uint32_t height;
-  uint8_t* buffer;
+  uint8_t* front_buffer;
+  uint8_t* back_buffer;
+  GMutex buffer_mutex;
   GLuint texture_id;
   uint32_t texture_width;
   uint32_t texture_height;
@@ -21,6 +22,20 @@ struct _ServoTexture {
 G_DEFINE_TYPE(ServoTexture, servo_texture, fl_texture_gl_get_type())
 
 namespace {
+
+class ScopedMutexLock {
+ public:
+  explicit ScopedMutexLock(GMutex* mutex) : mutex_(mutex) {
+    g_mutex_lock(mutex_);
+  }
+  ~ScopedMutexLock() { g_mutex_unlock(mutex_); }
+
+  ScopedMutexLock(const ScopedMutexLock&) = delete;
+  ScopedMutexLock& operator=(const ScopedMutexLock&) = delete;
+
+ private:
+  GMutex* mutex_;
+};
 
 constexpr uint8_t kAlpha = 255;
 
@@ -58,15 +73,23 @@ void fill_rect(ServoTexture* self,
   const uint32_t max_y = std::min(self->height, y + height);
   for (uint32_t yy = y; yy < max_y; yy++) {
     for (uint32_t xx = x; xx < max_x; xx++) {
-      uint8_t* pixel = self->buffer + ((yy * self->width + xx) * 4);
+      uint8_t* pixel = self->back_buffer + ((yy * self->width + xx) * 4);
       write_pixel(pixel, r, g, b);
     }
   }
 }
 
-void ensure_buffer(ServoTexture* self) {
+void ensure_buffer_locked(ServoTexture* self) {
   const size_t size = static_cast<size_t>(self->width) * self->height * 4;
-  self->buffer = static_cast<uint8_t*>(realloc(self->buffer, size));
+  self->front_buffer =
+      static_cast<uint8_t*>(g_realloc(self->front_buffer, size));
+  self->back_buffer =
+      static_cast<uint8_t*>(g_realloc(self->back_buffer, size));
+}
+
+void ensure_buffer(ServoTexture* self) {
+  const ScopedMutexLock lock(&self->buffer_mutex);
+  ensure_buffer_locked(self);
 }
 
 }  // namespace
@@ -79,10 +102,21 @@ static void servo_texture_dispose(GObject* object) {
   self->texture_id = 0;
   self->texture_width = 0;
   self->texture_height = 0;
-  free(self->buffer);
-  self->buffer = nullptr;
-
   G_OBJECT_CLASS(servo_texture_parent_class)->dispose(object);
+}
+
+static void servo_texture_finalize(GObject* object) {
+  ServoTexture* self = SERVO_TEXTURE(object);
+  {
+    const ScopedMutexLock lock(&self->buffer_mutex);
+    g_free(self->front_buffer);
+    g_free(self->back_buffer);
+    self->front_buffer = nullptr;
+    self->back_buffer = nullptr;
+  }
+  g_mutex_clear(&self->buffer_mutex);
+
+  G_OBJECT_CLASS(servo_texture_parent_class)->finalize(object);
 }
 
 static gboolean servo_texture_populate(FlTextureGL* texture,
@@ -93,7 +127,8 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
                                        GError** error) {
   (void)error;
   ServoTexture* self = SERVO_TEXTURE(texture);
-  if (self->buffer == nullptr) {
+  const ScopedMutexLock lock(&self->buffer_mutex);
+  if (self->front_buffer == nullptr) {
     return FALSE;
   }
 
@@ -115,12 +150,12 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
   if (self->texture_width != self->width ||
       self->texture_height != self->height) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->width, self->height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, self->buffer);
+                 GL_RGBA, GL_UNSIGNED_BYTE, self->front_buffer);
     self->texture_width = self->width;
     self->texture_height = self->height;
   } else {
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, self->width, self->height, GL_RGBA,
-                    GL_UNSIGNED_BYTE, self->buffer);
+                    GL_UNSIGNED_BYTE, self->front_buffer);
   }
   glBindTexture(GL_TEXTURE_2D, 0);
 
@@ -133,13 +168,16 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
 
 static void servo_texture_class_init(ServoTextureClass* klass) {
   G_OBJECT_CLASS(klass)->dispose = servo_texture_dispose;
+  G_OBJECT_CLASS(klass)->finalize = servo_texture_finalize;
   FL_TEXTURE_GL_CLASS(klass)->populate = servo_texture_populate;
 }
 
 static void servo_texture_init(ServoTexture* self) {
   self->width = 1;
   self->height = 1;
-  self->buffer = nullptr;
+  self->front_buffer = nullptr;
+  self->back_buffer = nullptr;
+  g_mutex_init(&self->buffer_mutex);
   self->texture_id = 0;
   self->texture_width = 0;
   self->texture_height = 0;
@@ -166,9 +204,10 @@ void servo_texture_resize(ServoTexture* self, uint32_t width, uint32_t height) {
     return;
   }
 
+  const ScopedMutexLock lock(&self->buffer_mutex);
   self->width = width;
   self->height = height;
-  ensure_buffer(self);
+  ensure_buffer_locked(self);
 }
 
 uint32_t servo_texture_get_width(ServoTexture* self) {
@@ -183,12 +222,19 @@ uint32_t servo_texture_get_height(ServoTexture* self) {
 
 uint8_t* servo_texture_get_buffer(ServoTexture* self) {
   g_return_val_if_fail(SERVO_IS_TEXTURE(self), nullptr);
-  return self->buffer;
+  return self->back_buffer;
 }
 
 size_t servo_texture_get_buffer_size(ServoTexture* self) {
   g_return_val_if_fail(SERVO_IS_TEXTURE(self), 0);
   return static_cast<size_t>(self->width) * self->height * 4;
+}
+
+void servo_texture_publish_frame(ServoTexture* self) {
+  g_return_if_fail(SERVO_IS_TEXTURE(self));
+
+  const ScopedMutexLock lock(&self->buffer_mutex);
+  std::swap(self->front_buffer, self->back_buffer);
 }
 
 void servo_texture_paint_placeholder(ServoTexture* self, const gchar* seed) {
@@ -209,7 +255,7 @@ void servo_texture_paint_placeholder(ServoTexture* self, const gchar* seed) {
       uint8_t r = static_cast<uint8_t>(250 - yf * 18 - xf * 4);
       uint8_t g = static_cast<uint8_t>(247 - yf * 10 + xf * 4);
       uint8_t b = static_cast<uint8_t>(241 - yf * 6 + xf * 8);
-      uint8_t* pixel = self->buffer + ((y * self->width + x) * 4);
+      uint8_t* pixel = self->back_buffer + ((y * self->width + x) * 4);
       write_pixel(pixel, r, g, b);
     }
   }
@@ -246,4 +292,6 @@ void servo_texture_paint_placeholder(ServoTexture* self, const gchar* seed) {
     fill_rect(self, line_x, line_y, line_width, 12, 213, 218, 214);
     line_y += 26;
   }
+
+  servo_texture_publish_frame(self);
 }

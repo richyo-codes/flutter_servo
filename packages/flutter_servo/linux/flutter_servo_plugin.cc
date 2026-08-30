@@ -109,6 +109,8 @@ static bool render_texture(FlutterServoPlugin* self,
   if (!rendered && paint_fallback) {
     g_warning("flutter_servo: linux plugin falling back to placeholder texture");
     servo_texture_paint_placeholder(self->texture, fallback_seed);
+  } else if (rendered) {
+    servo_texture_publish_frame(self->texture);
   }
 
   fl_texture_registrar_mark_texture_frame_available(self->texture_registrar,

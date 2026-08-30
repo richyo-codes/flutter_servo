@@ -26,6 +26,8 @@ uint8_t* servo_texture_get_buffer(ServoTexture* self);
 
 size_t servo_texture_get_buffer_size(ServoTexture* self);
 
+void servo_texture_publish_frame(ServoTexture* self);
+
 void servo_texture_paint_placeholder(ServoTexture* self, const gchar* seed);
 
 #endif  // FLUTTER_SERVO_TEXTURE_H_
