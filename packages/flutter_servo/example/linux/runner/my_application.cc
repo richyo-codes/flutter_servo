@@ -1,8 +1,10 @@
 #include "my_application.h"
 
 #include <flutter_linux/flutter_linux.h>
+#if !defined(FLUTTER_LINUX_GTK4)
 #ifdef GDK_WINDOWING_X11
 #include <gdk/gdkx.h>
+#endif
 #endif
 
 #include "flutter/generated_plugin_registrant.h"
@@ -35,6 +37,7 @@ static void my_application_activate(GApplication* application) {
   // in case the window manager does more exotic layout, e.g. tiling.
   // If running on Wayland assume the header bar will work (may need changing
   // if future cases occur).
+#if !defined(FLUTTER_LINUX_GTK4)
   gboolean use_header_bar = TRUE;
 #ifdef GDK_WINDOWING_X11
   GdkScreen* screen = gtk_window_get_screen(window);
@@ -54,6 +57,9 @@ static void my_application_activate(GApplication* application) {
   } else {
     gtk_window_set_title(window, "flutter_servo_example");
   }
+#else
+  gtk_window_set_title(window, "flutter_servo_example");
+#endif
 
   gtk_window_set_default_size(window, 1280, 720);
   g_message("flutter_servo: linux runner created GTK window");
@@ -70,8 +76,14 @@ static void my_application_activate(GApplication* application) {
   // for transparent.
   gdk_rgba_parse(&background_color, "#000000");
   fl_view_set_background_color(view, &background_color);
+#if defined(FLUTTER_LINUX_GTK4)
+  gtk_widget_set_focusable(GTK_WIDGET(view), TRUE);
+  gtk_window_set_child(window, GTK_WIDGET(view));
+#else
   gtk_widget_show(GTK_WIDGET(view));
   gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(view));
+  gtk_widget_set_can_focus(GTK_WIDGET(view), TRUE);
+#endif
 
   // Show the window when Flutter renders.
   // Requires the view to be realized so we can start rendering.
@@ -85,10 +97,13 @@ static void my_application_activate(GApplication* application) {
   fl_register_plugins(FL_PLUGIN_REGISTRY(view));
   g_message("flutter_servo: linux runner finished plugin registration");
 
-  gtk_widget_set_can_focus(GTK_WIDGET(view), TRUE);
   gtk_widget_grab_focus(GTK_WIDGET(view));
   g_message("flutter_servo: linux runner grabbed Flutter view focus");
+#if defined(FLUTTER_LINUX_GTK4)
+  gtk_widget_set_visible(GTK_WIDGET(window), TRUE);
+#else
   gtk_widget_show(GTK_WIDGET(window));
+#endif
   gtk_window_present(window);
   g_message("flutter_servo: linux runner showed GTK window");
 }
