@@ -789,9 +789,9 @@ mod imp {
             return false;
         };
         let button = match button {
-            0 => MouseButton::Left,
-            1 => MouseButton::Middle,
-            2 => MouseButton::Right,
+            0 => MouseButton::Primary,
+            1 => MouseButton::Auxiliary,
+            2 => MouseButton::Secondary,
             3 => MouseButton::Back,
             4 => MouseButton::Forward,
             value => MouseButton::Other(value as u16),
