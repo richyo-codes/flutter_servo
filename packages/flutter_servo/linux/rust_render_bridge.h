@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <glib.h>
 
 typedef struct _RustRenderBridge RustRenderBridge;
 typedef void* RustRenderSessionHandle;
@@ -42,6 +43,10 @@ bool rust_render_bridge_is_animating(RustRenderBridge* self,
 
 bool rust_render_bridge_poll(RustRenderBridge* self,
                              RustRenderSessionHandle session);
+
+// Returns an owned nonblocking descriptor, or -1 for an older bridge.
+int rust_render_bridge_wake_fd(RustRenderBridge* self,
+                               RustRenderSessionHandle session);
 
 bool rust_render_bridge_get_navigation_state(RustRenderBridge* self,
                                              RustRenderSessionHandle session,
@@ -91,5 +96,13 @@ bool rust_render_bridge_render_session(RustRenderBridge* self,
                                        uint32_t height,
                                        uint8_t* out_buffer,
                                        size_t out_len);
+
+// Returns a Rust-owned immutable RGBA frame, or null when unsupported.
+GBytes* rust_render_bridge_render_frame(RustRenderBridge* self,
+                                        RustRenderSessionHandle session,
+                                        uint32_t width,
+                                        uint32_t height);
+
+bool rust_render_bridge_supports_owned_frames(RustRenderBridge* self);
 
 #endif  // FLUTTER_SERVO_RUST_RENDER_BRIDGE_H_

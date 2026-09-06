@@ -4,6 +4,9 @@
 #include <flutter_linux/flutter_linux.h>
 #include <gtk/gtk.h>
 #include <cstring>
+#include <glib-unix.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include "rust_render_bridge.h"
 #include "servo_texture.h"
@@ -23,6 +26,8 @@ struct _FlutterServoPlugin {
   gchar* https_proxy_uri;
   gchar* no_proxy;
   guint frame_source_id;
+  guint wake_source_id;
+  int wake_fd;
 };
 
 G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
@@ -33,10 +38,38 @@ static bool render_texture(FlutterServoPlugin* self,
 
 static gboolean pump_servo_frame(gpointer user_data) {
   FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(user_data);
+  self->frame_source_id = 0;
   if (self->session != nullptr && self->texture != nullptr &&
       rust_render_bridge_poll(self->rust_render_bridge, self->session)) {
     render_texture(self, "frame-pump", false);
   }
+  if (self->wake_fd < 0 || rust_render_bridge_is_animating(
+          self->rust_render_bridge, self->session)) {
+    self->frame_source_id = g_timeout_add(16, pump_servo_frame, self);
+  }
+  return G_SOURCE_REMOVE;
+}
+
+static gboolean servo_woke(gint fd, GIOCondition condition, gpointer user_data) {
+  FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(user_data);
+  if (condition & (G_IO_ERR | G_IO_HUP | G_IO_NVAL)) {
+    self->wake_source_id = 0;
+    close(self->wake_fd);
+    self->wake_fd = -1;
+    if (self->frame_source_id == 0) {
+      self->frame_source_id = g_timeout_add(16, pump_servo_frame, self);
+    }
+    g_warning("flutter_servo: wake channel failed; using timer fallback");
+    return G_SOURCE_REMOVE;
+  }
+  char buffer[256];
+  // Bound draining so a busy producer cannot starve GTK input dispatch.
+  for (int i = 0; i < 256 && recv(fd, buffer, sizeof(buffer), MSG_DONTWAIT) > 0; i++) {}
+  if (self->frame_source_id != 0) {
+    g_source_remove(self->frame_source_id);
+    self->frame_source_id = 0;
+  }
+  pump_servo_frame(self);
   return G_SOURCE_CONTINUE;
 }
 
@@ -84,6 +117,12 @@ static bool ensure_session(FlutterServoPlugin* self) {
     g_warning("flutter_servo: linux plugin failed to create Rust render session");
   }
   if (self->session != nullptr && self->frame_source_id == 0) {
+    self->wake_fd = rust_render_bridge_wake_fd(self->rust_render_bridge, self->session);
+    if (self->wake_fd >= 0) {
+      self->wake_source_id = g_unix_fd_add(
+          self->wake_fd, static_cast<GIOCondition>(G_IO_IN | G_IO_ERR | G_IO_HUP),
+          servo_woke, self);
+    }
     self->frame_source_id = g_timeout_add_full(
         G_PRIORITY_HIGH_IDLE, 16, pump_servo_frame, self, nullptr);
   }
@@ -98,19 +137,33 @@ static bool render_texture(FlutterServoPlugin* self,
     return false;
   }
 
-  const bool rendered = ensure_session(self) &&
-                        rust_render_bridge_render_session(
-                            self->rust_render_bridge, self->session,
-                            servo_texture_get_width(self->texture),
-                            servo_texture_get_height(self->texture),
-                            servo_texture_get_buffer(self->texture),
-                            servo_texture_get_buffer_size(self->texture));
+  bool rendered = false;
+  if (ensure_session(self)) {
+    const uint32_t width = servo_texture_get_width(self->texture);
+    const uint32_t height = servo_texture_get_height(self->texture);
+    if (rust_render_bridge_supports_owned_frames(self->rust_render_bridge)) {
+      GBytes* frame = rust_render_bridge_render_frame(
+          self->rust_render_bridge, self->session, width, height);
+      if (frame != nullptr) {
+        rendered = servo_texture_publish_bytes(self->texture, frame, width, height);
+        if (!rendered) {
+          g_bytes_unref(frame);
+        }
+      }
+    } else {
+      rendered = rust_render_bridge_render_session(
+          self->rust_render_bridge, self->session, width, height,
+          servo_texture_get_buffer(self->texture),
+          servo_texture_get_buffer_size(self->texture));
+      if (rendered) {
+        servo_texture_publish_frame(self->texture);
+      }
+    }
+  }
 
   if (!rendered && paint_fallback) {
     g_warning("flutter_servo: linux plugin falling back to placeholder texture");
     servo_texture_paint_placeholder(self->texture, fallback_seed);
-  } else if (rendered) {
-    servo_texture_publish_frame(self->texture);
   }
 
   fl_texture_registrar_mark_texture_frame_available(self->texture_registrar,
@@ -588,6 +641,14 @@ static FlMethodResponse* handle_notify_key_event(FlutterServoPlugin* self,
 
 static void flutter_servo_plugin_dispose(GObject* object) {
   FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(object);
+  if (self->wake_source_id != 0) {
+    g_source_remove(self->wake_source_id);
+    self->wake_source_id = 0;
+  }
+  if (self->wake_fd >= 0) {
+    close(self->wake_fd);
+    self->wake_fd = -1;
+  }
   if (self->frame_source_id != 0) {
     g_source_remove(self->frame_source_id);
     self->frame_source_id = 0;
@@ -619,6 +680,8 @@ static void flutter_servo_plugin_init(FlutterServoPlugin* self) {
   self->https_proxy_uri = nullptr;
   self->no_proxy = nullptr;
   self->frame_source_id = 0;
+  self->wake_source_id = 0;
+  self->wake_fd = -1;
 }
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,

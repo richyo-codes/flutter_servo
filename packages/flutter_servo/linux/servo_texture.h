@@ -28,6 +28,12 @@ size_t servo_texture_get_buffer_size(ServoTexture* self);
 
 void servo_texture_publish_frame(ServoTexture* self);
 
+// Takes ownership of an immutable RGBA frame.
+bool servo_texture_publish_bytes(ServoTexture* self,
+                                 GBytes* frame,
+                                 uint32_t width,
+                                 uint32_t height);
+
 void servo_texture_paint_placeholder(ServoTexture* self, const gchar* seed);
 
 #endif  // FLUTTER_SERVO_TEXTURE_H_

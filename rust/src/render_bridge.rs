@@ -96,7 +96,11 @@ mod imp {
     }
 
     #[derive(Clone)]
-    struct SessionWaker(Arc<AtomicBool>);
+    struct SessionWaker {
+        pending: Arc<AtomicBool>,
+        #[cfg(target_os = "linux")]
+        signal: Arc<crate::wake_signal::WakeSignal>,
+    }
 
     impl EventLoopWaker for SessionWaker {
         fn clone_box(&self) -> Box<dyn EventLoopWaker> {
@@ -104,7 +108,9 @@ mod imp {
         }
 
         fn wake(&self) {
-            self.0.store(true, Ordering::Relaxed);
+            self.pending.store(true, Ordering::Relaxed);
+            #[cfg(target_os = "linux")]
+            self.signal.notify();
         }
     }
 
@@ -165,6 +171,8 @@ mod imp {
         size: PhysicalSize<u32>,
         rendered_frame_epoch: u64,
         wake_pending: Arc<AtomicBool>,
+        #[cfg(target_os = "linux")]
+        wake_signal: Arc<crate::wake_signal::WakeSignal>,
     }
 
     impl ServoRenderSession {
@@ -194,9 +202,18 @@ mod imp {
 
             eprintln!("flutter_servo: rust session building Servo");
             let wake_pending = Arc::new(AtomicBool::new(true));
+            #[cfg(target_os = "linux")]
+            let wake_signal = Arc::new(
+                crate::wake_signal::WakeSignal::new()
+                    .map_err(|error| format!("wake channel init failed: {error}"))?,
+            );
             let servo = ServoBuilder::default()
                 .preferences(preferences)
-                .event_loop_waker(Box::new(SessionWaker(wake_pending.clone())))
+                .event_loop_waker(Box::new(SessionWaker {
+                    pending: wake_pending.clone(),
+                    #[cfg(target_os = "linux")]
+                    signal: wake_signal.clone(),
+                }))
                 .build();
 
             eprintln!("flutter_servo: rust session creating WebView");
@@ -218,6 +235,8 @@ mod imp {
                 size,
                 rendered_frame_epoch: 0,
                 wake_pending,
+                #[cfg(target_os = "linux")]
+                wake_signal,
             })
         }
 
@@ -287,9 +306,15 @@ mod imp {
 
         fn poll(&self) -> bool {
             let has_pending_frame = self.delegate.frame_epoch.get() != self.rendered_frame_epoch;
-            if !self.delegate.animating.get()
-                && !has_pending_frame
-                && !self.wake_pending.swap(false, Ordering::Relaxed)
+            let was_woken = self.wake_pending.swap(false, Ordering::Relaxed);
+            if !self.delegate.animating.get() && !has_pending_frame && !was_woken {
+                return false;
+            }
+            // Event dispatch can invoke the paint delegate before render_rgba.
+            if self
+                .rendering_context
+                .as_ref()
+                .is_none_or(|context| context.make_current().is_err())
             {
                 return false;
             }
@@ -395,32 +420,21 @@ mod imp {
             }
         }
 
-        fn render_rgba(
-            &mut self,
-            width: u32,
-            height: u32,
-            out_rgba: *mut u8,
-            out_len: usize,
-        ) -> bool {
+        fn render_image(&mut self, width: u32, height: u32) -> Option<RgbaImage> {
             let width = width.max(1);
             let height = height.max(1);
             eprintln!("flutter_servo: rust render start {width}x{height}");
-            let expected_len = width as usize * height as usize * BYTES_PER_PIXEL;
-            if out_rgba.is_null() || out_len < expected_len {
-                eprintln!("flutter_servo: rust render rejected buffer");
-                return false;
-            }
 
             if !self.prepare_for_render(width, height) {
                 eprintln!("flutter_servo: rust render prepare failed");
-                return false;
+                return None;
             }
 
             if let Some(servo) = self.servo.as_ref() {
                 servo.spin_event_loop();
             } else {
                 eprintln!("flutter_servo: rust render missing Servo event loop");
-                return false;
+                return None;
             }
 
             eprintln!("flutter_servo: rust render painting webview");
@@ -428,7 +442,7 @@ mod imp {
                 webview.paint();
             } else {
                 eprintln!("flutter_servo: rust render missing webview");
-                return false;
+                return None;
             }
 
             let source_rectangle = DeviceIntRect::from_origin_and_size(
@@ -438,11 +452,11 @@ mod imp {
             eprintln!("flutter_servo: rust render reading framebuffer");
             let Some(rendering_context) = self.rendering_context.as_ref() else {
                 eprintln!("flutter_servo: rust render missing rendering context");
-                return false;
+                return None;
             };
             let Some(image) = rendering_context.read_to_image(source_rectangle) else {
                 eprintln!("flutter_servo: rust render framebuffer read failed");
-                return false;
+                return None;
             };
             let gl = rendering_context.gleam_gl_api();
             loop {
@@ -455,13 +469,33 @@ mod imp {
                 );
             }
 
-            let copied = copy_image_into_buffer(&image, width, height, unsafe {
-                slice::from_raw_parts_mut(out_rgba, expected_len)
-            });
-            if copied {
-                self.rendered_frame_epoch = self.delegate.frame_epoch.get();
+            if image.width() != width || image.height() != height {
+                return None;
             }
-            copied
+            self.rendered_frame_epoch = self.delegate.frame_epoch.get();
+            Some(image)
+        }
+
+        fn render_rgba(
+            &mut self,
+            width: u32,
+            height: u32,
+            out_rgba: *mut u8,
+            out_len: usize,
+        ) -> bool {
+            let width = width.max(1);
+            let height = height.max(1);
+            let expected_len = width as usize * height as usize * BYTES_PER_PIXEL;
+            if out_rgba.is_null() || out_len < expected_len {
+                eprintln!("flutter_servo: rust render rejected buffer");
+                return false;
+            }
+            let Some(image) = self.render_image(width, height) else {
+                return false;
+            };
+            copy_image_into_buffer(&image, width, height, unsafe {
+                slice::from_raw_parts_mut(out_rgba, expected_len)
+            })
         }
 
         fn prepare_for_render(&mut self, width: u32, height: u32) -> bool {
@@ -735,6 +769,16 @@ mod imp {
             .is_some_and(ServoRenderSession::poll)
     }
 
+    #[cfg(target_os = "linux")]
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_wake_fd(session: *const c_void) -> i32 {
+        session
+            .cast::<ServoRenderSession>()
+            .as_ref()
+            .and_then(|session| session.wake_signal.clone_receiver_fd().ok())
+            .unwrap_or(-1)
+    }
+
     #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_get_navigation_state(
         session: *const c_void,
@@ -887,10 +931,46 @@ mod imp {
             false
         })
     }
+
+    struct ExportedFrame(RgbaImage);
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_render_frame(
+        session: *mut c_void,
+        width: u32,
+        height: u32,
+        data_out: *mut *const u8,
+        len_out: *mut usize,
+    ) -> *mut c_void {
+        let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
+            return null_mut();
+        };
+        if data_out.is_null() || len_out.is_null() {
+            return null_mut();
+        }
+        catch_unwind(AssertUnwindSafe(|| session.render_image(width, height)))
+            .ok()
+            .flatten()
+            .map_or(null_mut(), |image| {
+                let frame = Box::new(ExportedFrame(image));
+                *data_out = frame.0.as_raw().as_ptr();
+                *len_out = frame.0.as_raw().len();
+                Box::into_raw(frame).cast()
+            })
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_frame_free(frame: *mut c_void) {
+        if !frame.is_null() {
+            drop(Box::from_raw(frame.cast::<ExportedFrame>()));
+        }
+    }
 }
 
 #[cfg(not(feature = "servo-engine"))]
 mod imp {
+    use std::ptr::null_mut;
+
     use super::{c_char, c_string, c_void, slice, ALPHA, BYTES_PER_PIXEL};
 
     enum DemoContent {
@@ -1091,6 +1171,39 @@ mod imp {
         let buffer = slice::from_raw_parts_mut(out_rgba, expected_len);
         paint_demo_frame(session, width, height, buffer);
         true
+    }
+
+    struct ExportedFrame(Vec<u8>);
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_render_frame(
+        session: *mut c_void,
+        width: u32,
+        height: u32,
+        data_out: *mut *const u8,
+        len_out: *mut usize,
+    ) -> *mut c_void {
+        let Some(session) = session.cast::<DemoSession>().as_ref() else {
+            return null_mut();
+        };
+        if data_out.is_null() || len_out.is_null() {
+            return null_mut();
+        }
+        let width = width.max(1);
+        let height = height.max(1);
+        let mut buffer = vec![0; width as usize * height as usize * BYTES_PER_PIXEL];
+        paint_demo_frame(session, width, height, &mut buffer);
+        let frame = Box::new(ExportedFrame(buffer));
+        *data_out = frame.0.as_ptr();
+        *len_out = frame.0.len();
+        Box::into_raw(frame).cast()
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_frame_free(frame: *mut c_void) {
+        if !frame.is_null() {
+            drop(Box::from_raw(frame.cast::<ExportedFrame>()));
+        }
     }
 
     fn paint_demo_frame(session: &DemoSession, width: u32, height: u32, buffer: &mut [u8]) {

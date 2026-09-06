@@ -32,6 +32,24 @@ using FlutterServoSessionRenderFn =
              uint32_t height,
              uint8_t* out_rgba,
              size_t out_len);
+using FlutterServoSessionRenderFrameFn = void* (*)(
+    void* session,
+    uint32_t width,
+    uint32_t height,
+    const uint8_t** data_out,
+    size_t* len_out);
+using FlutterServoFrameFreeFn = void (*)(void* frame);
+
+struct RustFrameOwner {
+  void* frame;
+  FlutterServoFrameFreeFn free_frame;
+};
+
+void release_rust_frame(gpointer data) {
+  auto* owner = static_cast<RustFrameOwner*>(data);
+  owner->free_frame(owner->frame);
+  g_free(owner);
+}
 
 template <typename T>
 T resolve_symbol(void* handle, const char* name) {
@@ -54,6 +72,7 @@ gchar* resolve_library_path() {
 
 struct _RustRenderBridge {
   void* handle;
+  int (*session_wake_fd)(void*);
   FlutterServoSessionNewFn session_new;
   FlutterServoSessionFreeFn session_free;
   FlutterServoSessionSetTextFn session_set_url;
@@ -72,6 +91,8 @@ struct _RustRenderBridge {
   FlutterServoSessionFocusWebViewFn session_focus_webview;
   FlutterServoSessionBlurWebViewFn session_blur_webview;
   FlutterServoSessionRenderFn session_render;
+  FlutterServoSessionRenderFrameFn session_render_frame;
+  FlutterServoFrameFreeFn frame_free;
 };
 
 RustRenderBridge* rust_render_bridge_new() {
@@ -197,6 +218,8 @@ RustRenderBridge* rust_render_bridge_new() {
 
   RustRenderBridge* self = g_new0(RustRenderBridge, 1);
   self->handle = handle;
+  self->session_wake_fd = resolve_symbol<int (*)(void*)>(
+      handle == nullptr ? RTLD_DEFAULT : handle, "flutter_servo_session_wake_fd");
   self->session_new = session_new;
   self->session_free = session_free;
   self->session_set_url = session_set_url;
@@ -215,7 +238,18 @@ RustRenderBridge* rust_render_bridge_new() {
   self->session_focus_webview = session_focus_webview;
   self->session_blur_webview = session_blur_webview;
   self->session_render = session_render;
+  void* symbol_handle = handle == nullptr ? RTLD_DEFAULT : handle;
+  self->session_render_frame = resolve_symbol<FlutterServoSessionRenderFrameFn>(
+      symbol_handle, "flutter_servo_session_render_frame");
+  self->frame_free = resolve_symbol<FlutterServoFrameFreeFn>(
+      symbol_handle, "flutter_servo_frame_free");
   return self;
+}
+
+int rust_render_bridge_wake_fd(RustRenderBridge* self,
+                               RustRenderSessionHandle session) {
+  return self != nullptr && self->session_wake_fd != nullptr && session != nullptr
+             ? self->session_wake_fd(session) : -1;
 }
 
 void rust_render_bridge_free(RustRenderBridge* self) {
@@ -385,4 +419,34 @@ bool rust_render_bridge_render_session(RustRenderBridge* self,
     g_warning("flutter_servo: Rust session render failed for %ux%u", width, height);
   }
   return ok;
+}
+
+GBytes* rust_render_bridge_render_frame(RustRenderBridge* self,
+                                        RustRenderSessionHandle session,
+                                        uint32_t width,
+                                        uint32_t height) {
+  if (self == nullptr || self->session_render_frame == nullptr ||
+      self->frame_free == nullptr || session == nullptr) {
+    return nullptr;
+  }
+  const uint8_t* data = nullptr;
+  size_t len = 0;
+  void* frame =
+      self->session_render_frame(session, width, height, &data, &len);
+  const size_t expected_len = static_cast<size_t>(width) * height * 4;
+  if (frame == nullptr || data == nullptr || len != expected_len) {
+    if (frame != nullptr) {
+      self->frame_free(frame);
+    }
+    return nullptr;
+  }
+  auto* owner = g_new(RustFrameOwner, 1);
+  owner->frame = frame;
+  owner->free_frame = self->frame_free;
+  return g_bytes_new_with_free_func(data, len, release_rust_frame, owner);
+}
+
+bool rust_render_bridge_supports_owned_frames(RustRenderBridge* self) {
+  return self != nullptr && self->session_render_frame != nullptr &&
+         self->frame_free != nullptr;
 }
