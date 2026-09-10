@@ -17,7 +17,7 @@ servo-engine = [
 ]
 
 [dependencies]
-flutter_rust_bridge = "=2.12.0"
+flutter_rust_bridge = "=2.13.0"
 dpi = { version = "0.1", optional = true }
 percent-encoding = { version = "2.3", optional = true }
 servo = { path = "/path/to/servo/components/servo", default-features = false, features = ["baked-in-resources", "js_jit"], optional = true }
