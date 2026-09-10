@@ -50,6 +50,7 @@ class _BrowserPageState extends State<BrowserPage> {
   FlutterServoContentType _contentType = FlutterServoContentType.url;
   int _reloadRevision = 0;
   bool _isLoading = false;
+  FlutterServoLoadProgress _loadProgress = FlutterServoLoadProgress.complete;
   bool _canGoBack = false;
   bool _canGoForward = false;
   _ViewportMode _viewportMode = _ViewportMode.desktop;
@@ -83,6 +84,7 @@ class _BrowserPageState extends State<BrowserPage> {
       _content = target;
       _contentType = contentType;
       _isLoading = true;
+      _loadProgress = FlutterServoLoadProgress.started;
       _reloadRevision++;
     });
   }
@@ -137,6 +139,7 @@ class _BrowserPageState extends State<BrowserPage> {
     setState(() {
       _viewportMode = mode;
       _isLoading = true;
+      _loadProgress = FlutterServoLoadProgress.started;
       _reloadRevision++;
     });
   }
@@ -151,6 +154,16 @@ class _BrowserPageState extends State<BrowserPage> {
       }
       _canGoBack = state.canGoBack;
       _canGoForward = state.canGoForward;
+    });
+  }
+
+  void _handleLoadProgress(FlutterServoLoadProgress progress) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _loadProgress = progress;
+      _isLoading = progress != FlutterServoLoadProgress.complete;
     });
   }
 
@@ -181,13 +194,9 @@ class _BrowserPageState extends State<BrowserPage> {
                   content: _content,
                   contentType: _contentType,
                   reloadRevision: _reloadRevision,
-                  isLoading: _isLoading,
+                  loadProgress: _loadProgress,
                   viewportMode: _viewportMode,
-                  onLoadStateChanged: (isLoading) {
-                    if (mounted && _isLoading != isLoading) {
-                      setState(() => _isLoading = isLoading);
-                    }
-                  },
+                  onLoadProgressChanged: _handleLoadProgress,
                   onNavigationStateChanged: _handleNavigationState,
                   onQuickSite: _loadQuickSite,
                 ),
@@ -385,9 +394,9 @@ class _BrowserViewport extends StatelessWidget {
     required this.content,
     required this.contentType,
     required this.reloadRevision,
-    required this.isLoading,
+    required this.loadProgress,
     required this.viewportMode,
-    required this.onLoadStateChanged,
+    required this.onLoadProgressChanged,
     required this.onNavigationStateChanged,
     required this.onQuickSite,
   });
@@ -395,9 +404,9 @@ class _BrowserViewport extends StatelessWidget {
   final String content;
   final FlutterServoContentType contentType;
   final int reloadRevision;
-  final bool isLoading;
+  final FlutterServoLoadProgress loadProgress;
   final _ViewportMode viewportMode;
-  final ValueChanged<bool> onLoadStateChanged;
+  final ValueChanged<FlutterServoLoadProgress> onLoadProgressChanged;
   final ValueChanged<FlutterServoNavigationState> onNavigationStateChanged;
   final ValueChanged<String> onQuickSite;
 
@@ -409,14 +418,14 @@ class _BrowserViewport extends StatelessWidget {
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,
-            onLoadStateChanged: onLoadStateChanged,
+            onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
           )
         : FlutterServoSurface.url(
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,
-            onLoadStateChanged: onLoadStateChanged,
+            onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
           );
 
@@ -448,7 +457,7 @@ class _BrowserViewport extends StatelessWidget {
               },
             ),
           ),
-          if (isLoading)
+          if (loadProgress == FlutterServoLoadProgress.started)
             const Positioned(
               top: 0,
               left: 0,

@@ -14,6 +14,8 @@ enum FlutterServoContentType {
   final String methodName;
 }
 
+enum FlutterServoLoadProgress { started, firstFrame, complete }
+
 class FlutterServoNavigationState {
   const FlutterServoNavigationState({
     required this.url,
@@ -33,6 +35,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.onLoadStateChanged,
+    this.onLoadProgressChanged,
     this.onNavigationStateChanged,
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.url;
@@ -43,6 +46,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.onLoadStateChanged,
+    this.onLoadProgressChanged,
     this.onNavigationStateChanged,
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.html;
@@ -52,6 +56,7 @@ class FlutterServoSurface extends StatefulWidget {
   final Widget fallback;
   final bool enableInputPlumbing;
   final ValueChanged<bool>? onLoadStateChanged;
+  final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
   final ValueChanged<FlutterServoNavigationState>? onNavigationStateChanged;
   final int reloadRevision;
 
@@ -82,11 +87,14 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   Timer? _resizeSyncTimer;
   bool _contentUpdateInFlight = false;
   bool _mouseMoveInFlight = false;
+  bool _wheelInFlight = false;
   String? _lastRenderedContent;
   FlutterServoContentType? _lastRenderedContentType;
   int? _lastRenderedRevision;
   int? _activeMouseButton;
   Offset? _pendingMousePosition;
+  Offset? _pendingWheelPosition;
+  Offset _pendingWheelDelta = Offset.zero;
 
   @override
   void initState() {
@@ -102,6 +110,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     _deferredRefreshTimer?.cancel();
     _resizeSyncTimer?.cancel();
     _pendingMousePosition = null;
+    _pendingWheelPosition = null;
     _loadStateListeners.remove(this);
     if (_loadStateListeners.isEmpty) {
       _channel.setMethodCallHandler(null);
@@ -140,17 +149,29 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       throw MissingPluginException('Unhandled native method: ${call.method}');
     }
 
-    final isLoading = call.arguments;
-    if (isLoading is! bool) {
+    final value = call.arguments;
+    final FlutterServoLoadProgress progress;
+    if (value is int &&
+        value >= 0 &&
+        value < FlutterServoLoadProgress.values.length) {
+      progress = FlutterServoLoadProgress.values[value];
+    } else if (value is bool) {
+      progress = value
+          ? FlutterServoLoadProgress.started
+          : FlutterServoLoadProgress.complete;
+    } else {
       throw PlatformException(
         code: 'invalid-load-state',
-        message: 'Expected a boolean load state from the Linux plugin.',
+        message: 'Expected a load progress value from the Linux plugin.',
       );
     }
 
     for (final listener in _loadStateListeners.toList()) {
       if (listener.mounted) {
-        listener.widget.onLoadStateChanged?.call(isLoading);
+        listener.widget.onLoadProgressChanged?.call(progress);
+        listener.widget.onLoadStateChanged?.call(
+          progress != FlutterServoLoadProgress.complete,
+        );
       }
     }
   }
@@ -162,22 +183,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         oldWidget.contentType != widget.contentType ||
         oldWidget.reloadRevision != widget.reloadRevision) {
       _scheduleTextureSync();
-      _requestFocusAfterUpdate();
       _queueDeferredTextureRefresh();
     }
-  }
-
-  void _requestFocusAfterUpdate() {
-    if (!widget.enableInputPlumbing || widget.content.trim().isEmpty) {
-      return;
-    }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        _focusNode.requestFocus();
-        unawaited(_sendFocusState(true));
-      }
-    });
   }
 
   void _queueDeferredTextureRefresh() {
@@ -312,7 +319,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           _lastRenderedContent = content;
           _lastRenderedContentType = widget.contentType;
           _lastRenderedRevision = widget.reloadRevision;
-          widget.onLoadStateChanged?.call(true);
           try {
             await _channel.invokeMethod<void>(widget.contentType.methodName, [
               content,
@@ -321,13 +327,12 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             _lastRenderedContent = previousContent;
             _lastRenderedContentType = previousContentType;
             _lastRenderedRevision = previousRevision;
+            widget.onLoadStateChanged?.call(false);
             rethrow;
           } finally {
             _contentUpdateInFlight = false;
             if (mounted) {
-              widget.onLoadStateChanged?.call(false);
               _scheduleTextureSync();
-              _requestFocusAfterUpdate();
               _queueDeferredTextureRefresh();
             }
           }
@@ -362,7 +367,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     }
 
     final devicePoint = _toDevicePoint(position);
-    _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseMove', devicePoint);
   }
 
@@ -395,7 +399,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     }
 
     final devicePoint = _toDevicePoint(position);
-    _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseButton', [
       devicePoint[0],
       devicePoint[1],
@@ -428,7 +431,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       return Future<void>.value();
     }
 
-    _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseLeaveViewport');
   }
 
@@ -438,13 +440,38 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     }
 
     final devicePoint = _toDevicePoint(position);
-    _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyMouseWheel', [
       devicePoint[0],
       devicePoint[1],
       (delta.dx * (_devicePixelRatio ?? 1.0)).round(),
       (delta.dy * (_devicePixelRatio ?? 1.0)).round(),
     ]);
+  }
+
+  void _queueMouseWheel(Offset position, Offset delta) {
+    _pendingWheelPosition = position;
+    _pendingWheelDelta += delta;
+    if (!_wheelInFlight) {
+      unawaited(_drainMouseWheel());
+    }
+  }
+
+  Future<void> _drainMouseWheel() async {
+    _wheelInFlight = true;
+    try {
+      while (mounted && _pendingWheelPosition != null) {
+        final position = _pendingWheelPosition!;
+        final delta = _pendingWheelDelta;
+        _pendingWheelPosition = null;
+        _pendingWheelDelta = Offset.zero;
+        await _sendMouseWheel(position, delta);
+      }
+    } finally {
+      _wheelInFlight = false;
+      if (mounted && _pendingWheelPosition != null) {
+        unawaited(_drainMouseWheel());
+      }
+    }
   }
 
   Future<void> _sendKeyEvent(KeyEvent event) {
@@ -457,7 +484,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       return Future<void>.value();
     }
 
-    _queueDeferredTextureRefresh();
     return _channel.invokeMethod<void>('notifyKeyEvent', [
       event.logicalKey.keyLabel,
       event.character ?? '',
@@ -514,10 +540,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             return KeyEventResult.handled;
           },
           child: MouseRegion(
-            onEnter: (_) {
-              _focusNode.requestFocus();
-              unawaited(_sendFocusState(true));
-            },
             onHover: (event) => _queueMouseMove(event.localPosition),
             onExit: (_) => unawaited(_sendMouseLeave()),
             child: Listener(
@@ -549,9 +571,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
               },
               onPointerSignal: (event) {
                 if (event is PointerScrollEvent) {
-                  unawaited(
-                    _sendMouseWheel(event.localPosition, event.scrollDelta),
-                  );
+                  _queueMouseWheel(event.localPosition, event.scrollDelta);
                 }
               },
               child: child,

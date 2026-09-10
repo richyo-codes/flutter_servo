@@ -114,18 +114,31 @@ mod imp {
         }
     }
 
-    #[derive(Default)]
     struct SessionDelegate {
         document_ready: Cell<bool>,
         frame_ready: Cell<bool>,
+        load_status: Cell<LoadStatus>,
         animating: Cell<bool>,
         frame_epoch: Cell<u64>,
+    }
+
+    impl Default for SessionDelegate {
+        fn default() -> Self {
+            Self {
+                document_ready: Cell::new(false),
+                frame_ready: Cell::new(false),
+                load_status: Cell::new(LoadStatus::Started),
+                animating: Cell::new(false),
+                frame_epoch: Cell::new(0),
+            }
+        }
     }
 
     impl SessionDelegate {
         fn begin_navigation(&self) {
             self.document_ready.set(false);
             self.frame_ready.set(false);
+            self.load_status.set(LoadStatus::Started);
         }
 
         fn mark_frame_dirty(&self) {
@@ -154,6 +167,7 @@ mod imp {
             if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete) {
                 self.document_ready.set(true);
             }
+            self.load_status.set(status);
         }
 
         fn notify_animating_changed(&self, _webview: WebView, animating: bool) {
@@ -302,6 +316,16 @@ mod imp {
 
         fn is_animating(&self) -> bool {
             self.delegate.animating.get()
+        }
+
+        fn load_progress(&self) -> u8 {
+            if self.delegate.load_status.get() == LoadStatus::Complete {
+                2
+            } else if self.delegate.frame_ready.get() {
+                1
+            } else {
+                0
+            }
         }
 
         fn poll(&self) -> bool {
@@ -762,6 +786,14 @@ mod imp {
     }
 
     #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_load_progress(session: *const c_void) -> u8 {
+        session
+            .cast::<ServoRenderSession>()
+            .as_ref()
+            .map_or(0, ServoRenderSession::load_progress)
+    }
+
+    #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_poll(session: *const c_void) -> bool {
         session
             .cast::<ServoRenderSession>()
@@ -1053,6 +1085,15 @@ mod imp {
     #[no_mangle]
     pub unsafe extern "C" fn flutter_servo_session_is_animating(_session: *const c_void) -> bool {
         false
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_load_progress(session: *const c_void) -> u8 {
+        if session.is_null() {
+            0
+        } else {
+            2
+        }
     }
 
     #[no_mangle]

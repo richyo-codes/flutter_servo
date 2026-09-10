@@ -11,6 +11,7 @@ using FlutterServoSessionNewFn = void* (*)(const char* http_proxy_uri,
 using FlutterServoSessionFreeFn = void (*)(void* session);
 using FlutterServoSessionSetTextFn = bool (*)(void* session, const char* text);
 using FlutterServoSessionCommandFn = bool (*)(void* session);
+using FlutterServoSessionLoadProgressFn = uint8_t (*)(const void* session);
 using FlutterServoSessionNavigationStateFn = bool (*)(const void* session,
                                                       char* url_out,
                                                       size_t url_out_len,
@@ -81,6 +82,7 @@ struct _RustRenderBridge {
   FlutterServoSessionCommandFn session_go_forward;
   FlutterServoSessionCommandFn session_reload;
   FlutterServoSessionCommandFn session_is_animating;
+  FlutterServoSessionLoadProgressFn session_load_progress;
   FlutterServoSessionCommandFn session_poll;
   FlutterServoSessionNavigationStateFn session_get_navigation_state;
   FlutterServoSessionNotifyMouseMoveFn session_notify_mouse_move;
@@ -228,6 +230,10 @@ RustRenderBridge* rust_render_bridge_new() {
   self->session_go_forward = session_go_forward;
   self->session_reload = session_reload;
   self->session_is_animating = session_is_animating;
+  self->session_load_progress =
+      resolve_symbol<FlutterServoSessionLoadProgressFn>(
+          handle == nullptr ? RTLD_DEFAULT : handle,
+          "flutter_servo_session_load_progress");
   self->session_poll = session_poll;
   self->session_get_navigation_state = session_get_navigation_state;
   self->session_notify_mouse_move = session_notify_mouse_move;
@@ -326,6 +332,14 @@ bool rust_render_bridge_is_animating(RustRenderBridge* self,
                                      RustRenderSessionHandle session) {
   return self != nullptr && self->session_is_animating != nullptr &&
          session != nullptr && self->session_is_animating(session);
+}
+
+uint8_t rust_render_bridge_load_progress(RustRenderBridge* self,
+                                         RustRenderSessionHandle session) {
+  return self != nullptr && self->session_load_progress != nullptr &&
+                 session != nullptr
+             ? self->session_load_progress(session)
+             : 2;
 }
 
 bool rust_render_bridge_poll(RustRenderBridge* self,

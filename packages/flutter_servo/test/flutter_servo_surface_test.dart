@@ -162,9 +162,7 @@ void main() {
     expect(refreshAttempts, greaterThanOrEqualTo(2));
   });
 
-  testWidgets('coalesces refresh requests while a native render is active', (
-    tester,
-  ) async {
+  testWidgets('does not request refreshes for pointer input', (tester) async {
     final firstRefresh = Completer<void>();
     var refreshAttempts = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -209,7 +207,119 @@ void main() {
     firstRefresh.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
-    expect(refreshAttempts, 2);
+    expect(refreshAttempts, 1);
+  });
+
+  testWidgets('reports native load progress and legacy loading state', (
+    tester,
+  ) async {
+    final progress = <FlutterServoLoadProgress>[];
+    final loading = <bool>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          return null;
+        });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SizedBox(
+          width: 200,
+          height: 100,
+          child: FlutterServoSurface.html(
+            content: '<p>Loading target</p>',
+            fallback: const ColoredBox(color: Colors.white),
+            onLoadProgressChanged: progress.add,
+            onLoadStateChanged: loading.add,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    Future<void> sendLoadProgress(Object value) async {
+      final reply = Completer<void>();
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+            channel.name,
+            const StandardMethodCodec().encodeMethodCall(
+              MethodCall('loadStateChanged', value),
+            ),
+            (_) => reply.complete(),
+          );
+      await reply.future;
+    }
+
+    await sendLoadProgress(0);
+    await sendLoadProgress(1);
+    await sendLoadProgress(2);
+
+    expect(progress, FlutterServoLoadProgress.values);
+    expect(loading, [true, true, false]);
+  });
+
+  testWidgets('does not steal focus on reload or pointer hover', (
+    tester,
+  ) async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          return null;
+        });
+
+    final addressFocusNode = FocusNode();
+    addTearDown(addressFocusNode.dispose);
+    var reloadRevision = 0;
+    late StateSetter updateSurface;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: StatefulBuilder(
+            builder: (context, setState) {
+              updateSurface = setState;
+              return Column(
+                children: [
+                  SizedBox(
+                    width: 300,
+                    child: TextField(focusNode: addressFocusNode),
+                  ),
+                  SizedBox(
+                    width: 200,
+                    height: 100,
+                    child: FlutterServoSurface.html(
+                      content: '<p>Focus target</p>',
+                      reloadRevision: reloadRevision,
+                      fallback: const ColoredBox(color: Colors.white),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    addressFocusNode.requestFocus();
+    await tester.pump();
+    updateSurface(() => reloadRevision++);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+
+    final pointer = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await pointer.addPointer(
+      location: tester.getCenter(find.byType(FlutterServoSurface)),
+    );
+    await tester.pump();
+
+    expect(addressFocusNode.hasFocus, isTrue);
   });
 
   testWidgets('leaves animated frame pumping to the native renderer', (

@@ -28,6 +28,7 @@ struct _FlutterServoPlugin {
   guint frame_source_id;
   guint wake_source_id;
   int wake_fd;
+  int load_progress;
 };
 
 G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
@@ -35,6 +36,7 @@ G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
 static bool render_texture(FlutterServoPlugin* self,
                            const gchar* fallback_seed,
                            bool paint_fallback);
+static void update_load_progress(FlutterServoPlugin* self);
 
 static gboolean pump_servo_frame(gpointer user_data) {
   FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(user_data);
@@ -43,11 +45,19 @@ static gboolean pump_servo_frame(gpointer user_data) {
       rust_render_bridge_poll(self->rust_render_bridge, self->session)) {
     render_texture(self, "frame-pump", false);
   }
+  update_load_progress(self);
   if (self->wake_fd < 0 || rust_render_bridge_is_animating(
           self->rust_render_bridge, self->session)) {
     self->frame_source_id = g_timeout_add(16, pump_servo_frame, self);
   }
   return G_SOURCE_REMOVE;
+}
+
+static void schedule_servo_frame(FlutterServoPlugin* self) {
+  if (self->frame_source_id == 0) {
+    self->frame_source_id = g_idle_add_full(
+        G_PRIORITY_HIGH_IDLE, pump_servo_frame, self, nullptr);
+  }
 }
 
 static gboolean servo_woke(gint fd, GIOCondition condition, gpointer user_data) {
@@ -73,14 +83,26 @@ static gboolean servo_woke(gint fd, GIOCondition condition, gpointer user_data) 
   return G_SOURCE_CONTINUE;
 }
 
-static void send_load_state_changed(FlutterServoPlugin* self, bool is_loading) {
+static void send_load_state_changed(FlutterServoPlugin* self, int progress) {
   if (self == nullptr || self->method_channel == nullptr) {
     return;
   }
+  if (self->load_progress == progress) {
+    return;
+  }
+  self->load_progress = progress;
 
-  g_autoptr(FlValue) args = fl_value_new_bool(is_loading);
+  g_autoptr(FlValue) args = fl_value_new_int(progress);
   fl_method_channel_invoke_method(self->method_channel, "loadStateChanged",
                                   args, nullptr, nullptr, nullptr);
+}
+
+static void update_load_progress(FlutterServoPlugin* self) {
+  if (self != nullptr && self->session != nullptr) {
+    send_load_state_changed(
+        self, rust_render_bridge_load_progress(self->rust_render_bridge,
+                                               self->session));
+  }
 }
 
 static void send_navigation_state_changed(FlutterServoPlugin* self) {
@@ -171,6 +193,7 @@ static bool render_texture(FlutterServoPlugin* self,
   if (rendered) {
     send_navigation_state_changed(self);
   }
+  update_load_progress(self);
   return rendered;
 }
 
@@ -479,9 +502,8 @@ static FlMethodResponse* handle_navigation_command(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_success_response_new(fl_value_new_bool(false)));
   }
 
-  send_load_state_changed(self, true);
+  send_load_state_changed(self, 0);
   const bool rendered = render_texture(self, command, false);
-  send_load_state_changed(self, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(
       fl_value_new_bool(rendered)));
 }
@@ -494,18 +516,16 @@ static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
         "invalid-args", "Expected [url].", nullptr));
   }
   g_message("flutter_servo: linux plugin setUrl");
-  send_load_state_changed(self, true);
+  send_load_state_changed(self, 0);
   if (!ensure_session(self) ||
       !rust_render_bridge_set_url(self->rust_render_bridge, self->session,
                                   url)) {
-    send_load_state_changed(self, false);
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "session-update-failed", "Failed to set URL content.", nullptr));
   }
   // Navigation is accepted even when its first frame is not ready yet. Dart
   // schedules bounded refresh attempts without blocking the platform thread.
   render_texture(self, url, true);
-  send_load_state_changed(self, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -517,16 +537,14 @@ static FlMethodResponse* handle_set_html(FlutterServoPlugin* self,
         "invalid-args", "Expected [html].", nullptr));
   }
   g_message("flutter_servo: linux plugin setHtml");
-  send_load_state_changed(self, true);
+  send_load_state_changed(self, 0);
   if (!ensure_session(self) ||
       !rust_render_bridge_set_html(self->rust_render_bridge, self->session,
                                    html)) {
-    send_load_state_changed(self, false);
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "session-update-failed", "Failed to set HTML content.", nullptr));
   }
   render_texture(self, html, true);
-  send_load_state_changed(self, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -568,6 +586,7 @@ static FlMethodResponse* handle_notify_mouse_move(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward mouse move.", nullptr));
   }
+  schedule_servo_frame(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -588,6 +607,7 @@ static FlMethodResponse* handle_notify_mouse_button(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward mouse button.", nullptr));
   }
+  schedule_servo_frame(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -597,6 +617,7 @@ static FlMethodResponse* handle_notify_mouse_leave_viewport(FlutterServoPlugin* 
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward mouse leave viewport.", nullptr));
   }
+  schedule_servo_frame(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -617,6 +638,7 @@ static FlMethodResponse* handle_notify_mouse_wheel(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward mouse wheel.", nullptr));
   }
+  schedule_servo_frame(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -636,6 +658,7 @@ static FlMethodResponse* handle_notify_key_event(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "input-failed", "Failed to forward key event.", nullptr));
   }
+  schedule_servo_frame(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -682,6 +705,7 @@ static void flutter_servo_plugin_init(FlutterServoPlugin* self) {
   self->frame_source_id = 0;
   self->wake_source_id = 0;
   self->wake_fd = -1;
+  self->load_progress = -1;
 }
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
