@@ -155,11 +155,9 @@ mod imp {
     }
 
     impl WebViewDelegate for SessionDelegate {
-        fn notify_new_frame_ready(&self, webview: WebView) {
-            eprintln!("flutter_servo: rust delegate new frame ready");
+        fn notify_new_frame_ready(&self, _webview: WebView) {
             self.frame_ready.set(true);
             self.frame_epoch.set(self.frame_epoch.get().wrapping_add(1));
-            webview.paint();
         }
 
         fn notify_load_status_changed(&self, _webview: WebView, status: LoadStatus) {
@@ -447,7 +445,6 @@ mod imp {
         fn render_image(&mut self, width: u32, height: u32) -> Option<RgbaImage> {
             let width = width.max(1);
             let height = height.max(1);
-            eprintln!("flutter_servo: rust render start {width}x{height}");
 
             if !self.prepare_for_render(width, height) {
                 eprintln!("flutter_servo: rust render prepare failed");
@@ -461,7 +458,6 @@ mod imp {
                 return None;
             }
 
-            eprintln!("flutter_servo: rust render painting webview");
             if let Some(webview) = self.webview.as_ref() {
                 webview.paint();
             } else {
@@ -473,7 +469,6 @@ mod imp {
                 DeviceIntPoint::zero(),
                 DeviceIntSize::new(width as i32, height as i32),
             );
-            eprintln!("flutter_servo: rust render reading framebuffer");
             let Some(rendering_context) = self.rendering_context.as_ref() else {
                 eprintln!("flutter_servo: rust render missing rendering context");
                 return None;
@@ -608,6 +603,7 @@ mod imp {
 
     impl Drop for ServoRenderSession {
         fn drop(&mut self) {
+            eprintln!("flutter_servo: rust session shutdown start");
             if let Some(webview) = self.webview.take() {
                 drop(webview);
                 if let Some(servo) = self.servo.as_ref() {
@@ -620,6 +616,7 @@ mod imp {
             }
             let _ = self.servo.take();
             let _ = self.rendering_context.take();
+            eprintln!("flutter_servo: rust session shutdown complete");
         }
     }
 

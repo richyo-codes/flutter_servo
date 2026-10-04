@@ -75,6 +75,14 @@ static gboolean servo_woke(gint fd, GIOCondition condition, gpointer user_data) 
   char buffer[256];
   // Bound draining so a busy producer cannot starve GTK input dispatch.
   for (int i = 0; i < 256 && recv(fd, buffer, sizeof(buffer), MSG_DONTWAIT) > 0; i++) {}
+  if (rust_render_bridge_is_animating(self->rust_render_bridge,
+                                      self->session)) {
+    if (self->frame_source_id == 0) {
+      self->frame_source_id = g_timeout_add_full(
+          G_PRIORITY_HIGH_IDLE, 16, pump_servo_frame, self, nullptr);
+    }
+    return G_SOURCE_CONTINUE;
+  }
   if (self->frame_source_id != 0) {
     g_source_remove(self->frame_source_id);
     self->frame_source_id = 0;
@@ -183,13 +191,17 @@ static bool render_texture(FlutterServoPlugin* self,
     }
   }
 
-  if (!rendered && paint_fallback) {
+  bool published = rendered;
+  if (!published && paint_fallback) {
     g_warning("flutter_servo: linux plugin falling back to placeholder texture");
     servo_texture_paint_placeholder(self->texture, fallback_seed);
+    published = true;
   }
 
-  fl_texture_registrar_mark_texture_frame_available(self->texture_registrar,
-                                                    FL_TEXTURE(self->texture));
+  if (published) {
+    fl_texture_registrar_mark_texture_frame_available(self->texture_registrar,
+                                                      FL_TEXTURE(self->texture));
+  }
   if (rendered) {
     send_navigation_state_changed(self);
   }
@@ -426,6 +438,7 @@ static FlMethodResponse* handle_create_texture(FlutterServoPlugin* self,
     self->texture = servo_texture_new(width, height, "servo");
     if (!fl_texture_registrar_register_texture(self->texture_registrar,
                                                FL_TEXTURE(self->texture))) {
+      g_clear_object(&self->texture);
       return FL_METHOD_RESPONSE(fl_method_error_response_new(
           "texture-register-failed", "Failed to register texture.", nullptr));
     }
@@ -503,9 +516,11 @@ static FlMethodResponse* handle_navigation_command(FlutterServoPlugin* self,
   }
 
   send_load_state_changed(self, 0);
-  const bool rendered = render_texture(self, command, false);
+  // Navigation acceptance is independent of whether Servo has a framebuffer
+  // ready synchronously. The wake-driven frame pump publishes it later.
+  render_texture(self, command, false);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(
-      fl_value_new_bool(rendered)));
+      fl_value_new_bool(true)));
 }
 
 static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
@@ -676,9 +691,13 @@ static void flutter_servo_plugin_dispose(GObject* object) {
     g_source_remove(self->frame_source_id);
     self->frame_source_id = 0;
   }
-  g_clear_object(&self->texture);
   rust_render_bridge_destroy_session(self->rust_render_bridge, self->session);
   self->session = nullptr;
+  if (self->texture != nullptr && self->texture_registrar != nullptr) {
+    fl_texture_registrar_unregister_texture(self->texture_registrar,
+                                            FL_TEXTURE(self->texture));
+  }
+  g_clear_object(&self->texture);
   rust_render_bridge_free(self->rust_render_bridge);
   self->rust_render_bridge = nullptr;
   g_clear_object(&self->method_channel);
