@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_servo/flutter_servo.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 enum _ViewportMode { desktop, mobile }
 
@@ -41,6 +43,8 @@ class BrowserPage extends StatefulWidget {
 }
 
 class _BrowserPageState extends State<BrowserPage> {
+  static const _bookmarksKey = 'browser.bookmarks';
+
   final TextEditingController _addressController = TextEditingController(
     text: FlutterServo.mvpInitialUrl(),
   );
@@ -54,6 +58,15 @@ class _BrowserPageState extends State<BrowserPage> {
   bool _canGoBack = false;
   bool _canGoForward = false;
   _ViewportMode _viewportMode = _ViewportMode.desktop;
+  List<String> _bookmarks = const [];
+  late final Future<void> _bookmarksReady;
+  bool _bookmarkUpdateInFlight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _bookmarksReady = _loadBookmarks();
+  }
 
   @override
   void dispose() {
@@ -65,6 +78,55 @@ class _BrowserPageState extends State<BrowserPage> {
   bool get _isHtmlInput {
     final input = _addressController.text.trimLeft().toLowerCase();
     return input.startsWith('<') || input.contains('<html');
+  }
+
+  String? get _bookmarkableAddress {
+    final uri = Uri.tryParse(_addressController.text.trim());
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      return null;
+    }
+    return uri.toString();
+  }
+
+  Future<void> _loadBookmarks() async {
+    final preferences = await SharedPreferences.getInstance();
+    final bookmarks = preferences.getStringList(_bookmarksKey) ?? const [];
+    if (mounted) {
+      setState(() => _bookmarks = bookmarks);
+    }
+  }
+
+  Future<void> _toggleBookmark() async {
+    final address = _bookmarkableAddress;
+    if (address == null || _bookmarkUpdateInFlight) {
+      return;
+    }
+    setState(() => _bookmarkUpdateInFlight = true);
+    try {
+      await _bookmarksReady;
+      final bookmarks = [..._bookmarks];
+      if (!bookmarks.remove(address)) {
+        bookmarks.add(address);
+        bookmarks.sort();
+      }
+      final preferences = await SharedPreferences.getInstance();
+      final saved = await preferences.setStringList(_bookmarksKey, bookmarks);
+      if (saved && mounted) {
+        setState(() => _bookmarks = bookmarks);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _bookmarkUpdateInFlight = false);
+      }
+    }
+  }
+
+  void _focusAddressBar() {
+    _addressFocusNode.requestFocus();
+    _addressController.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _addressController.text.length,
+    );
   }
 
   void _navigate() {
@@ -100,12 +162,19 @@ class _BrowserPageState extends State<BrowserPage> {
     return 'https://$input';
   }
 
+  void _beginLoading() {
+    setState(() {
+      _isLoading = true;
+      _loadProgress = FlutterServoLoadProgress.started;
+    });
+  }
+
   Future<void> _goBack() async {
     if (!await FlutterServo.goBack()) {
       return;
     }
     if (mounted) {
-      setState(() => _isLoading = true);
+      _beginLoading();
     }
   }
 
@@ -114,7 +183,7 @@ class _BrowserPageState extends State<BrowserPage> {
       return;
     }
     if (mounted) {
-      setState(() => _isLoading = true);
+      _beginLoading();
     }
   }
 
@@ -123,7 +192,7 @@ class _BrowserPageState extends State<BrowserPage> {
       return;
     }
     if (mounted) {
-      setState(() => _isLoading = true);
+      _beginLoading();
     }
   }
 
@@ -169,45 +238,68 @@ class _BrowserPageState extends State<BrowserPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: Column(
-          children: [
-            _BrowserIdentity(isLoading: _isLoading),
-            _BrowserToolbar(
-              addressController: _addressController,
-              addressFocusNode: _addressFocusNode,
-              canGoBack: _canGoBack,
-              canGoForward: _canGoForward,
-              isLoading: _isLoading,
-              viewportMode: _viewportMode,
-              onBack: _goBack,
-              onForward: _goForward,
-              onReload: _reload,
-              onSubmit: _navigate,
-              onViewportModeChanged: _setViewportMode,
-            ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: _BrowserViewport(
-                  content: _content,
-                  contentType: _contentType,
-                  reloadRevision: _reloadRevision,
-                  loadProgress: _loadProgress,
+    return CallbackShortcuts(
+      bindings: {
+        const SingleActivator(LogicalKeyboardKey.keyL, control: true):
+            _focusAddressBar,
+        const SingleActivator(LogicalKeyboardKey.keyR, control: true): () {
+          _reload();
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () {
+          _goBack();
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () {
+          _goForward();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: Scaffold(
+          body: SafeArea(
+            child: Column(
+              children: [
+                _BrowserIdentity(isLoading: _isLoading),
+                _BrowserToolbar(
+                  addressController: _addressController,
+                  addressFocusNode: _addressFocusNode,
+                  canGoBack: _canGoBack,
+                  canGoForward: _canGoForward,
+                  isLoading: _isLoading,
+                  bookmarks: _bookmarks,
+                  currentBookmark: _bookmarkableAddress,
+                  bookmarkUpdateInFlight: _bookmarkUpdateInFlight,
                   viewportMode: _viewportMode,
-                  onLoadProgressChanged: _handleLoadProgress,
-                  onNavigationStateChanged: _handleNavigationState,
-                  onQuickSite: _loadQuickSite,
+                  onBack: _goBack,
+                  onForward: _goForward,
+                  onReload: _reload,
+                  onToggleBookmark: _toggleBookmark,
+                  onOpenBookmark: _loadQuickSite,
+                  onSubmit: _navigate,
+                  onViewportModeChanged: _setViewportMode,
                 ),
-              ),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                    child: _BrowserViewport(
+                      content: _content,
+                      contentType: _contentType,
+                      reloadRevision: _reloadRevision,
+                      loadProgress: _loadProgress,
+                      viewportMode: _viewportMode,
+                      onLoadProgressChanged: _handleLoadProgress,
+                      onNavigationStateChanged: _handleNavigationState,
+                      onQuickSite: _loadQuickSite,
+                    ),
+                  ),
+                ),
+                _BrowserStatus(
+                  isLoading: _isLoading,
+                  viewportMode: _viewportMode,
+                  currentAddress: _addressController.text,
+                ),
+              ],
             ),
-            _BrowserStatus(
-              isLoading: _isLoading,
-              viewportMode: _viewportMode,
-              currentAddress: _addressController.text,
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -227,26 +319,36 @@ class _BrowserIdentity extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: Color(0xFF29313A))),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 18,
-            height: 18,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE57345),
-              shape: BoxShape.circle,
+      child: LayoutBuilder(
+        builder: (context, constraints) => Row(
+          children: [
+            Container(
+              width: 18,
+              height: 18,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE57345),
+                shape: BoxShape.circle,
+              ),
             ),
-          ),
-          const SizedBox(width: 9),
-          const Text(
-            'SERVO',
-            style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.8),
-          ),
-          const SizedBox(width: 10),
-          const Text('Browser MVP', style: TextStyle(color: Color(0xFF9BA8B5))),
-          const Spacer(),
-          _StatePill(label: isLoading ? 'LOADING' : 'READY', active: isLoading),
-        ],
+            const SizedBox(width: 9),
+            const Text(
+              'SERVO',
+              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.8),
+            ),
+            if (constraints.maxWidth >= 350) ...[
+              const SizedBox(width: 10),
+              const Text(
+                'Browser MVP',
+                style: TextStyle(color: Color(0xFF9BA8B5)),
+              ),
+            ],
+            const Spacer(),
+            _StatePill(
+              label: isLoading ? 'LOADING' : 'READY',
+              active: isLoading,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -259,10 +361,15 @@ class _BrowserToolbar extends StatelessWidget {
     required this.canGoBack,
     required this.canGoForward,
     required this.isLoading,
+    required this.bookmarks,
+    required this.currentBookmark,
+    required this.bookmarkUpdateInFlight,
     required this.viewportMode,
     required this.onBack,
     required this.onForward,
     required this.onReload,
+    required this.onToggleBookmark,
+    required this.onOpenBookmark,
     required this.onSubmit,
     required this.onViewportModeChanged,
   });
@@ -272,10 +379,15 @@ class _BrowserToolbar extends StatelessWidget {
   final bool canGoBack;
   final bool canGoForward;
   final bool isLoading;
+  final List<String> bookmarks;
+  final String? currentBookmark;
+  final bool bookmarkUpdateInFlight;
   final _ViewportMode viewportMode;
   final Future<void> Function() onBack;
   final Future<void> Function() onForward;
   final Future<void> Function() onReload;
+  final Future<void> Function() onToggleBookmark;
+  final ValueChanged<String> onOpenBookmark;
   final VoidCallback onSubmit;
   final ValueChanged<_ViewportMode> onViewportModeChanged;
 
@@ -364,13 +476,51 @@ class _BrowserToolbar extends StatelessWidget {
             onSelectionChanged: (selection) =>
                 onViewportModeChanged(selection.single),
           );
+          final bookmarkControls = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                key: const ValueKey('bookmark-toggle'),
+                tooltip:
+                    currentBookmark != null &&
+                        bookmarks.contains(currentBookmark)
+                    ? 'Remove bookmark'
+                    : 'Bookmark page',
+                onPressed: currentBookmark == null || bookmarkUpdateInFlight
+                    ? null
+                    : () => onToggleBookmark(),
+                icon: Icon(
+                  currentBookmark != null && bookmarks.contains(currentBookmark)
+                      ? Icons.star_rounded
+                      : Icons.star_border_rounded,
+                ),
+              ),
+              PopupMenuButton<String>(
+                key: const ValueKey('bookmarks-menu'),
+                tooltip: 'Bookmarks',
+                enabled: bookmarks.isNotEmpty,
+                onSelected: onOpenBookmark,
+                itemBuilder: (context) => [
+                  for (final bookmark in bookmarks)
+                    PopupMenuItem(value: bookmark, child: Text(bookmark)),
+                ],
+                icon: const Icon(Icons.bookmarks_outlined),
+              ),
+            ],
+          );
 
           if (compact) {
             return Column(
               children: [
-                Row(children: [navigation, const SizedBox(width: 8), mode]),
+                Row(children: [navigation, const Spacer(), bookmarkControls]),
                 const SizedBox(height: 8),
-                address,
+                Row(
+                  children: [
+                    Expanded(child: address),
+                    const SizedBox(width: 8),
+                    mode,
+                  ],
+                ),
               ],
             );
           }
@@ -380,6 +530,8 @@ class _BrowserToolbar extends StatelessWidget {
               const SizedBox(width: 8),
               Expanded(child: address),
               const SizedBox(width: 10),
+              bookmarkControls,
+              const SizedBox(width: 6),
               mode,
             ],
           );
@@ -486,49 +638,58 @@ class _StartSurface extends StatelessWidget {
           colors: [Color(0xFF263744), Color(0xFF10171E)],
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const _StatePill(label: 'SERVO 0.4', active: true),
-            const Spacer(),
-            Text(
-              'A browser shell\nfor an embeddable engine.',
-              style: textTheme.displaySmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                height: 0.98,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          padding: const EdgeInsets.all(32),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              minHeight: (constraints.maxHeight - 64).clamp(0, double.infinity),
+            ),
+            child: IntrinsicHeight(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const _StatePill(label: 'SERVO 0.4', active: true),
+                  const Spacer(),
+                  Text(
+                    'A browser shell\nfor an embeddable engine.',
+                    style: textTheme.displaySmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      height: 0.98,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  const Text(
+                    'Use the address bar for URLs, search terms, data URLs, or raw HTML. The buttons below load real Servo pages.',
+                    style: TextStyle(color: Color(0xFFC3CED7), height: 1.45),
+                  ),
+                  const SizedBox(height: 28),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _QuickSiteButton(
+                        label: 'RichYoung.ca',
+                        icon: Icons.public,
+                        onPressed: () => onQuickSite('https://richyoung.ca'),
+                      ),
+                      _QuickSiteButton(
+                        label: 'Servo',
+                        icon: Icons.rocket_launch_outlined,
+                        onPressed: () => onQuickSite('https://servo.org'),
+                      ),
+                      _QuickSiteButton(
+                        label: 'Search',
+                        icon: Icons.search,
+                        onPressed: () => onQuickSite('servo browser embedding'),
+                      ),
+                    ],
+                  ),
+                  const Spacer(flex: 2),
+                ],
               ),
             ),
-            const SizedBox(height: 14),
-            const Text(
-              'Use the address bar for URLs, search terms, data URLs, or raw HTML. The buttons below load real Servo pages.',
-              style: TextStyle(color: Color(0xFFC3CED7), height: 1.45),
-            ),
-            const SizedBox(height: 28),
-            Wrap(
-              spacing: 10,
-              runSpacing: 10,
-              children: [
-                _QuickSiteButton(
-                  label: 'RichYoung.ca',
-                  icon: Icons.public,
-                  onPressed: () => onQuickSite('https://richyoung.ca'),
-                ),
-                _QuickSiteButton(
-                  label: 'Servo',
-                  icon: Icons.rocket_launch_outlined,
-                  onPressed: () => onQuickSite('https://servo.org'),
-                ),
-                _QuickSiteButton(
-                  label: 'Search',
-                  icon: Icons.search,
-                  onPressed: () => onQuickSite('servo browser embedding'),
-                ),
-              ],
-            ),
-            const Spacer(flex: 2),
-          ],
+          ),
         ),
       ),
     );

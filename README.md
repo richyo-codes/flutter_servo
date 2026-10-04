@@ -32,6 +32,17 @@ cd packages/flutter_servo/example
 flutter run -d linux
 ```
 
+Validate the responsive browser UI and build the Android debug APK:
+
+```bash
+./tools/test_android.sh
+```
+
+The Android runner currently exercises the Flutter browser chrome and fallback
+surface only. Servo rendering remains Linux-only until an Android native plugin
+is implemented. The APK is written to
+`packages/flutter_servo/example/build/app/outputs/flutter-apk/app-debug.apk`.
+
 Build the GTK4 variant with the local Flutter GTK4 fork:
 
 ```bash
