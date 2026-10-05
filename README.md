@@ -9,7 +9,7 @@ This repository currently contains:
 - `packages/flutter_servo/`: reusable Flutter package and Linux plugin
 - `packages/flutter_servo/example/`: demo app consuming the package
 - `rust/`: shared Rust crate exposed via `flutter_rust_bridge`
-- `packages/flutter_servo/rust_builder/`: `cargokit`-based Rust build package
+- `packages/flutter_servo/hook/build.dart`: Native Assets Rust build hook
 - planning docs for the first embedded Servo MVP
 
 The current demo shows a package-owned Linux native texture surface inside the
@@ -69,7 +69,7 @@ cargo build --release --manifest-path rust/Cargo.toml
 packages/flutter_servo/              Reusable package + Linux plugin
 packages/flutter_servo/example/      Demo application
 packages/flutter_servo/lib/src/rust/ Generated flutter_rust_bridge Dart bindings
-packages/flutter_servo/rust_builder/ Native Rust build package
+packages/flutter_servo/hook/         Native Assets Rust build hook
 rust/                               Rust crate
 tools/                              Local helper scripts
 docs/                               Planning notes
