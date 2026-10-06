@@ -8,14 +8,12 @@ This repository currently contains:
 
 - `packages/flutter_servo/`: reusable Flutter package and Linux plugin
 - `packages/flutter_servo/example/`: demo app consuming the package
-- `rust/`: shared Rust crate exposed via `flutter_rust_bridge`
+- `packages/flutter_servo/rust/`: package-owned Rust crate
 - `packages/flutter_servo/hook/build.dart`: Native Assets Rust build hook
 - planning docs for the first embedded Servo MVP
 
-The current demo shows a package-owned Linux native texture surface inside the
-example app. That native surface is still a demo renderer, but the pixel data
-now comes from the Rust library rather than being painted directly in the Linux
-plugin.
+The example embeds real Servo content in a package-owned Linux native texture.
+Frame updates are wake-driven; the GTK thread does not wait for scene readiness.
 
 ## Dependencies
 
@@ -74,7 +72,7 @@ isolated `build/linux-gtk4` directory and is the target for EGLImage interop.
 Build the Rust library directly:
 
 ```bash
-cargo build --release --manifest-path rust/Cargo.toml
+cargo build --release --manifest-path packages/flutter_servo/rust/Cargo.toml --features servo-engine
 ```
 
 ## Layout
@@ -84,7 +82,7 @@ packages/flutter_servo/              Reusable package + Linux plugin
 packages/flutter_servo/example/      Demo application
 packages/flutter_servo/lib/src/rust/ Generated flutter_rust_bridge Dart bindings
 packages/flutter_servo/hook/         Native Assets Rust build hook
-rust/                               Rust crate
+packages/flutter_servo/rust/         Rust crate
 tools/                              Local helper scripts
 docs/                               Planning notes
 ```

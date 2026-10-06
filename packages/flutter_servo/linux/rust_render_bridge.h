@@ -41,7 +41,7 @@ bool rust_render_bridge_reload(RustRenderBridge* self,
 bool rust_render_bridge_is_animating(RustRenderBridge* self,
                                      RustRenderSessionHandle session);
 
-// 0 = started, 1 = first frame, 2 = complete.
+// 0 = started, 1 = first frame, 2 = complete, 3 = failed.
 uint8_t rust_render_bridge_load_progress(RustRenderBridge* self,
                                          RustRenderSessionHandle session);
 

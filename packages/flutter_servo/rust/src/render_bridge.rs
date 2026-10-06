@@ -16,7 +16,6 @@ mod imp {
         atomic::{AtomicBool, Ordering},
         Arc,
     };
-    use std::time::{Duration, Instant};
 
     use dpi::PhysicalSize;
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
@@ -598,24 +597,17 @@ mod imp {
                 self.pending_navigation = false;
             }
 
+            if let Some(servo) = self.servo.as_ref() {
+                servo.spin_event_loop();
+            }
             if self.delegate.crashed.get() {
                 return false;
             }
 
             if !self.delegate.is_scene_ready() {
-                eprintln!("flutter_servo: rust render waiting for scene readiness");
-                if !self.spin_until(Duration::from_millis(250), || {
-                    self.delegate.is_scene_ready()
-                }) {
-                    if self.delegate.has_frame() {
-                        eprintln!(
-                            "flutter_servo: rust render using available frame before document readiness"
-                        );
-                    } else {
-                        eprintln!("flutter_servo: rust render frame not ready yet");
-                        return false;
-                    }
-                }
+                // The wake-driven GTK pump will retry when Servo publishes a frame.
+                // Never wait for a scene on the UI thread.
+                return self.delegate.has_frame();
             }
 
             true
@@ -627,41 +619,18 @@ mod imp {
                 SessionContent::Html(html) => data_url_for_html(html),
             }
         }
-
-        fn spin_until(&self, timeout: Duration, done: impl Fn() -> bool) -> bool {
-            let start = Instant::now();
-            while !done() {
-                if self.delegate.crashed.get() {
-                    return false;
-                }
-                if start.elapsed() >= timeout {
-                    eprintln!("flutter_servo: rust spin_until timed out after {timeout:?}");
-                    return false;
-                }
-                if let Some(servo) = self.servo.as_ref() {
-                    servo.spin_event_loop();
-                } else {
-                    return false;
-                }
-                std::thread::sleep(Duration::from_millis(1));
-            }
-            true
-        }
     }
 
     impl Drop for ServoRenderSession {
         fn drop(&mut self) {
             eprintln!("flutter_servo: rust session shutdown start");
-            if let Some(webview) = self.webview.take() {
-                drop(webview);
-                if let Some(servo) = self.servo.as_ref() {
-                    let deadline = Instant::now() + Duration::from_millis(100);
-                    while Instant::now() < deadline {
-                        servo.spin_event_loop();
-                        std::thread::sleep(Duration::from_millis(1));
-                    }
-                }
+            if let Some(context) = self.rendering_context.as_ref() {
+                // Flutter may have changed the current GL context since the last paint.
+                let _ = context.make_current();
             }
+            let _ = self.webview.take();
+            // Servo's destructor drains its shutdown protocol; an arbitrary delay adds
+            // latency without proving its threads have stopped.
             let _ = self.servo.take();
             let _ = self.rendering_context.take();
             eprintln!("flutter_servo: rust session shutdown complete");
