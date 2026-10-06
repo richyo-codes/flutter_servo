@@ -27,6 +27,9 @@ Generate Rust bridge bindings from the repository root:
 ./tools/rebuild_rust_bridge.sh
 ```
 
+In a standalone package checkout, run `flutter_rust_bridge_codegen generate`
+from the package root; the package includes its own generator configuration.
+
 Run the example app:
 
 ```bash
