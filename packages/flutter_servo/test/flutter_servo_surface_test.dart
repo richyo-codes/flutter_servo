@@ -1,6 +1,5 @@
 import 'dart:async';
-import 'dart:ui' show PointerDeviceKind;
-
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_servo/flutter_servo.dart';
@@ -161,6 +160,49 @@ void main() {
     expect(buttonCall.arguments, [50, 60, 0, true]);
 
     await pointer.up();
+  });
+
+  testWidgets('converts both scroll axes to Servo physical motion deltas', (
+    tester,
+  ) async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          return null;
+        });
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FlutterServoSurface.html(
+          content: '<p>Scroll target</p>',
+          fallback: ColoredBox(color: Colors.white),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    final origin = tester.getTopLeft(find.byType(FlutterServoSurface));
+    for (final delta in [const Offset(12, 30), const Offset(-12, -30)]) {
+      await tester.sendEventToBinding(
+        PointerScrollEvent(
+          position: origin + const Offset(25, 30),
+          scrollDelta: delta,
+        ),
+      );
+      await tester.pump();
+    }
+    final wheels = calls.where((call) => call.method == 'notifyMouseWheel');
+    expect(wheels.map((call) => call.arguments).toList(), [
+      [50, 60, -24, -60],
+      [50, 60, 24, 60],
+    ]);
+    await tester.pumpWidget(const SizedBox.shrink());
   });
 
   testWidgets('reloads unchanged content when the revision changes', (

@@ -463,11 +463,12 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     }
 
     final devicePoint = _toDevicePoint(position);
+    // Servo expects content-motion deltas, opposite to Flutter scroll offsets.
     return _channel.invokeMethod<void>('notifyMouseWheel', [
       devicePoint[0],
       devicePoint[1],
-      (delta.dx * (_devicePixelRatio ?? 1.0)).round(),
-      (delta.dy * (_devicePixelRatio ?? 1.0)).round(),
+      (-delta.dx * (_devicePixelRatio ?? 1.0)).round(),
+      (-delta.dy * (_devicePixelRatio ?? 1.0)).round(),
     ]);
   }
 
