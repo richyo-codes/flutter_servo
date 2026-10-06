@@ -37,6 +37,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
+    this.onError,
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.url;
 
@@ -48,6 +49,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
+    this.onError,
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.html;
 
@@ -58,6 +60,7 @@ class FlutterServoSurface extends StatefulWidget {
   final ValueChanged<bool>? onLoadStateChanged;
   final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
   final ValueChanged<FlutterServoNavigationState>? onNavigationStateChanged;
+  final ValueChanged<PlatformException>? onError;
   final int reloadRevision;
 
   @override
@@ -79,6 +82,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   int? _textureWidth;
   int? _textureHeight;
   bool _syncQueued = false;
+  bool _textureSyncInFlight = false;
+  bool _textureSyncRequested = false;
   bool _deferredRefreshQueued = false;
   bool _refreshInFlight = false;
   bool _refreshRequested = false;
@@ -248,6 +253,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   void _scheduleTextureSync() {
+    if (_textureSyncInFlight) {
+      _textureSyncRequested = true;
+      return;
+    }
     if (_syncQueued || _logicalSize == null || _devicePixelRatio == null) {
       return;
     }
@@ -275,6 +284,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         return;
       }
 
+      _textureSyncInFlight = true;
       try {
         final hadTexture = _textureId != null;
         var textureId = _textureId;
@@ -319,19 +329,20 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           _lastRenderedContent = content;
           _lastRenderedContentType = widget.contentType;
           _lastRenderedRevision = widget.reloadRevision;
+          var loaded = false;
           try {
             await _channel.invokeMethod<void>(widget.contentType.methodName, [
               content,
             ]);
+            loaded = true;
           } catch (_) {
             _lastRenderedContent = previousContent;
             _lastRenderedContentType = previousContentType;
             _lastRenderedRevision = previousRevision;
-            widget.onLoadStateChanged?.call(false);
             rethrow;
           } finally {
             _contentUpdateInFlight = false;
-            if (mounted) {
+            if (mounted && loaded) {
               _scheduleTextureSync();
               _queueDeferredTextureRefresh();
             }
@@ -346,6 +357,18 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           _textureWidth = null;
           _textureHeight = null;
         });
+      } on PlatformException catch (error) {
+        if (mounted) {
+          widget.onLoadProgressChanged?.call(FlutterServoLoadProgress.complete);
+          widget.onLoadStateChanged?.call(false);
+          widget.onError?.call(error);
+        }
+      } finally {
+        _textureSyncInFlight = false;
+        if (mounted && _textureSyncRequested) {
+          _textureSyncRequested = false;
+          _scheduleTextureSync();
+        }
       }
     });
     WidgetsBinding.instance.ensureVisualUpdate();

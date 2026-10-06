@@ -16,6 +16,99 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  testWidgets('reports failed loads once and allows explicit reload', (
+    tester,
+  ) async {
+    final errors = <PlatformException>[];
+    final calls = <MethodCall>[];
+    var rejectLoad = true;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          if (call.method == 'setHtml' && rejectLoad) {
+            throw PlatformException(code: 'session-update-failed');
+          }
+          return null;
+        });
+    var revision = 0;
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return FlutterServoSurface.html(
+              content: '<p>Retry target</p>',
+              reloadRevision: revision,
+              onError: errors.add,
+              fallback: const ColoredBox(color: Colors.white),
+            );
+          },
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 3));
+    expect(errors.single.code, 'session-update-failed');
+    expect(calls.where((call) => call.method == 'setHtml'), hasLength(1));
+    expect(calls.where((call) => call.method == 'refreshTexture'), isEmpty);
+    expect(tester.takeException(), isNull);
+
+    rejectLoad = false;
+    update(() => revision++);
+    await tester.pump();
+    await tester.pump();
+    expect(calls.where((call) => call.method == 'setHtml'), hasLength(2));
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('serializes creation and loads the latest pending content', (
+    tester,
+  ) async {
+    final creation = Completer<int>();
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'createTexture') return creation.future;
+          if (call.method == 'resizeTexture') return 1;
+          return null;
+        });
+    var content = '<p>Initial</p>';
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return FlutterServoSurface.html(
+              content: content,
+              fallback: const ColoredBox(color: Colors.white),
+            );
+          },
+        ),
+      ),
+    );
+    update(() => content = '<p>Latest</p>');
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+    expect(calls.where((call) => call.method == 'createTexture'), hasLength(1));
+
+    creation.complete(1);
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    final loads = calls.where((call) => call.method == 'setHtml');
+    expect(loads, hasLength(1));
+    expect(loads.single.arguments, ['<p>Latest</p>']);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('forwards texture-local physical pointer coordinates', (
     tester,
   ) async {
