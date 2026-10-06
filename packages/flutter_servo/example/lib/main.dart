@@ -605,6 +605,7 @@ class _BrowserViewport extends StatelessWidget {
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
             onError: onError,
+            enableContextMenu: true,
           )
         : FlutterServoSurface.url(
             content: content,
@@ -613,6 +614,7 @@ class _BrowserViewport extends StatelessWidget {
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
             onError: onError,
+            enableContextMenu: true,
           );
 
     return DecoratedBox(

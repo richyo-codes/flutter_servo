@@ -10,8 +10,14 @@ The package currently provides:
 - a Linux plugin that exposes a native texture backed by Rust-rendered pixels
 - a package-owned example app under `example/`
 
-The native Linux surface is still a demo renderer. The next milestone is to
-replace that Rust-generated frame source with real Servo frame output.
+The Linux surface renders real Servo content with wake-driven native texture
+updates. Rust and its Native Assets hook are contained in this package; Servo
+v0.6.0 and the public Surfman fix are pinned in `rust/Cargo.toml`/`Cargo.lock`.
+No sibling Rust crate or local Servo/Surfman checkout is required.
+
+The browser offers a basic editing context menu, modifier-aware keyboard
+selection, repeat events, and Servo's system clipboard support. Full IME
+composition and page-specific DOM context menus are not implemented yet.
 
 ## Development
 
@@ -24,7 +30,7 @@ Generate Rust bridge bindings from the repository root:
 Run the example app:
 
 ```bash
-cd packages/flutter_servo/example
+cd example
 flutter run -d linux
 ```
 

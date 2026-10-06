@@ -302,6 +302,70 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
+  testWidgets('forwards repeats and offers editing shortcuts', (tester) async {
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'createTexture' || call.method == 'resizeTexture') {
+            return 1;
+          }
+          return true;
+        });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FlutterServoSurface.html(
+          content: '<input>',
+          enableContextMenu: true,
+          fallback: SizedBox(),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.byType(FlutterServoSurface));
+    await tester.pump();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.keyA, character: 'a');
+    await tester.sendKeyRepeatEvent(LogicalKeyboardKey.keyA, character: 'a');
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.keyA);
+    await tester.pump();
+    expect(
+      calls
+          .where((call) => call.method == 'notifyKeyEvent')
+          .map((call) => call.arguments)
+          .toList(),
+      [
+        ['A', 'a', true],
+        ['A', 'a', true],
+        ['A', '', false],
+      ],
+    );
+    calls.clear();
+    final pointer = await tester.startGesture(
+      tester.getCenter(find.byType(FlutterServoSurface)),
+      kind: PointerDeviceKind.mouse,
+      buttons: kSecondaryMouseButton,
+    );
+    await pointer.up();
+    await tester.pumpAndSettle();
+    expect(find.text('Copy'), findsOneWidget);
+    await tester.tap(find.text('Copy'));
+    await tester.pumpAndSettle();
+    expect(
+      calls
+          .where((call) => call.method == 'notifyKeyEvent')
+          .map((call) => call.arguments)
+          .toList(),
+      [
+        ['Control', '', true],
+        ['c', 'c', true],
+        ['c', '', false],
+        ['Control', '', false],
+      ],
+    );
+    expect(calls.where((call) => call.method == 'notifyMouseButton'), isEmpty);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   testWidgets('reloads unchanged content when the revision changes', (
     tester,
   ) async {

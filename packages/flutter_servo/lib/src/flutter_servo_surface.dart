@@ -34,6 +34,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.content,
     required this.fallback,
     this.enableInputPlumbing = true,
+    this.enableContextMenu = false,
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
@@ -47,6 +48,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.content,
     required this.fallback,
     this.enableInputPlumbing = true,
+    this.enableContextMenu = false,
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
@@ -59,6 +61,9 @@ class FlutterServoSurface extends StatefulWidget {
   final String content;
   final Widget fallback;
   final bool enableInputPlumbing;
+
+  /// Shows a basic editing menu; requires a Material host. Not a page DOM menu.
+  final bool enableContextMenu;
   final ValueChanged<bool>? onLoadStateChanged;
   final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
   final ValueChanged<FlutterServoNavigationState>? onNavigationStateChanged;
@@ -107,6 +112,45 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   Offset? _pendingMousePosition;
   Offset? _pendingWheelPosition;
   Offset _pendingWheelDelta = Offset.zero;
+  int? _contextMenuPointer;
+
+  Future<void> _showEditingMenu(Offset globalPosition) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject()! as RenderBox;
+    final position = overlay.globalToLocal(globalPosition);
+    final key = await showMenu<String>(
+      context: context,
+      requestFocus: false,
+      position: RelativeRect.fromRect(
+        Rect.fromLTWH(position.dx, position.dy, 0, 0),
+        Offset.zero & overlay.size,
+      ),
+      items: const [
+        PopupMenuItem(value: 'a', child: Text('Select All')),
+        PopupMenuItem(value: 'c', child: Text('Copy')),
+        PopupMenuItem(value: 'x', child: Text('Cut')),
+        PopupMenuItem(value: 'v', child: Text('Paste')),
+      ],
+    );
+    if (!mounted || _loadFailed || key == null) return;
+    _focusNode.requestFocus();
+    await _sendFocusState(true);
+    try {
+      await _channel.invokeMethod<void>('notifyKeyEvent', [
+        'Control',
+        '',
+        true,
+      ]);
+      await _channel.invokeMethod<void>('notifyKeyEvent', [key, key, true]);
+    } finally {
+      await _channel.invokeMethod<void>('notifyKeyEvent', [key, '', false]);
+      await _channel.invokeMethod<void>('notifyKeyEvent', [
+        'Control',
+        '',
+        false,
+      ]);
+    }
+  }
 
   @override
   void initState() {
@@ -569,7 +613,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       return Future<void>.value();
     }
 
-    final isDown = event is KeyDownEvent;
+    final isDown = event is KeyDownEvent || event is KeyRepeatEvent;
     if (!isDown && event is! KeyUpEvent) {
       return Future<void>.value();
     }
@@ -635,6 +679,12 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             child: Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: (event) {
+                if (widget.enableContextMenu &&
+                    event.buttons == kSecondaryMouseButton) {
+                  _contextMenuPointer = event.pointer;
+                  unawaited(_showEditingMenu(event.position));
+                  return;
+                }
                 _focusNode.requestFocus();
                 unawaited(_sendFocusState(true));
                 _activeMouseButton = _mapMouseButtonsToServoButton(
@@ -650,6 +700,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
               },
               onPointerMove: (event) => _queueMouseMove(event.localPosition),
               onPointerUp: (event) {
+                if (_contextMenuPointer == event.pointer) {
+                  _contextMenuPointer = null;
+                  return;
+                }
                 unawaited(
                   _sendMouseButton(
                     event.localPosition,

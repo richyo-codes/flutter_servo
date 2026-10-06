@@ -8,7 +8,7 @@ const ALPHA: u8 = 255;
 
 #[cfg(feature = "servo-engine")]
 mod imp {
-    use std::cell::Cell;
+    use std::cell::{Cell, RefCell};
     use std::panic::{catch_unwind, AssertUnwindSafe};
     use std::ptr::null_mut;
     use std::rc::Rc;
@@ -21,10 +21,10 @@ mod imp {
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
     use servo::{DeviceIntPoint, DeviceIntRect, DeviceIntSize};
     use servo::{
-        DevicePoint, EventLoopWaker, InputEvent, Key, KeyState, LoadStatus, MouseButton,
-        MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent, MouseMoveEvent, NamedKey,
-        Preferences, RenderingContext, RgbaImage, Servo, ServoBuilder, SoftwareRenderingContext,
-        WebView, WebViewBuilder, WebViewDelegate, WheelDelta, WheelEvent, WheelMode,
+        DevicePoint, EventLoopWaker, InputEvent, KeyState, LoadStatus, MouseButton,
+        MouseButtonAction, MouseButtonEvent, MouseLeftViewportEvent, MouseMoveEvent, Preferences,
+        RenderingContext, RgbaImage, Servo, ServoBuilder, SoftwareRenderingContext, WebView,
+        WebViewBuilder, WebViewDelegate, WheelDelta, WheelEvent, WheelMode,
     };
     use url::Url;
 
@@ -200,6 +200,7 @@ mod imp {
         size: PhysicalSize<u32>,
         rendered_frame_epoch: u64,
         wake_pending: Arc<AtomicBool>,
+        keyboard: RefCell<crate::keyboard_input::KeyboardState>,
         #[cfg(target_os = "linux")]
         wake_signal: Arc<crate::wake_signal::WakeSignal>,
     }
@@ -264,6 +265,7 @@ mod imp {
                 size,
                 rendered_frame_epoch: 0,
                 wake_pending,
+                keyboard: RefCell::new(crate::keyboard_input::KeyboardState::default()),
                 #[cfg(target_os = "linux")]
                 wake_signal,
             })
@@ -444,13 +446,28 @@ mod imp {
             character: &str,
             key_state: KeyState,
         ) -> bool {
-            let key = key_from_flutter_key(key_label, character);
+            let event = self
+                .keyboard
+                .borrow_mut()
+                .event(key_label, character, key_state);
             self.webview
                 .as_ref()
                 .map(|webview| {
-                    webview.notify_input_event(InputEvent::Keyboard(
-                        servo::KeyboardEvent::from_state_and_key(key_state, key),
-                    ));
+                    use crate::keyboard_input::EditingShortcut;
+                    // Servoshell dispatches these as editing actions, not raw keys.
+                    let input = match crate::keyboard_input::editing_shortcut(&event) {
+                        Some(EditingShortcut::Copy) => {
+                            InputEvent::EditingAction(servo::EditingActionEvent::Copy)
+                        }
+                        Some(EditingShortcut::Cut) => {
+                            InputEvent::EditingAction(servo::EditingActionEvent::Cut)
+                        }
+                        Some(EditingShortcut::Paste) => {
+                            InputEvent::EditingAction(servo::EditingActionEvent::Paste)
+                        }
+                        None => InputEvent::Keyboard(servo::KeyboardEvent::new(event)),
+                    };
+                    webview.notify_input_event(input);
                     true
                 })
                 .unwrap_or(false)
@@ -463,6 +480,7 @@ mod imp {
         }
 
         fn blur_webview(&self) {
+            self.keyboard.borrow_mut().clear();
             if let Some(webview) = self.webview.as_ref() {
                 webview.blur();
             }
@@ -662,41 +680,6 @@ mod imp {
             utf8_percent_encode(html, NON_ALPHANUMERIC)
         ))
         .map_err(|error| format!("html data URL parse failed: {error}"))
-    }
-
-    fn key_from_flutter_key(key_label: &str, character: &str) -> Key {
-        if !character.is_empty() {
-            return Key::Character(character.into());
-        }
-
-        let normalized = key_label
-            .trim()
-            .to_ascii_lowercase()
-            .replace([' ', '_', '-'], "");
-
-        match normalized.as_str() {
-            "backspace" => Key::Named(NamedKey::Backspace),
-            "tab" => Key::Named(NamedKey::Tab),
-            "enter" | "numpadenter" => Key::Named(NamedKey::Enter),
-            "escape" | "esc" => Key::Named(NamedKey::Escape),
-            "space" | "spacebar" => Key::Character(" ".into()),
-            "arrowleft" | "leftarrow" => Key::Named(NamedKey::ArrowLeft),
-            "arrowright" | "rightarrow" => Key::Named(NamedKey::ArrowRight),
-            "arrowup" | "uparrow" => Key::Named(NamedKey::ArrowUp),
-            "arrowdown" | "downarrow" => Key::Named(NamedKey::ArrowDown),
-            "delete" | "del" => Key::Named(NamedKey::Delete),
-            "insert" | "ins" => Key::Named(NamedKey::Insert),
-            "home" => Key::Named(NamedKey::Home),
-            "end" => Key::Named(NamedKey::End),
-            "pageup" => Key::Named(NamedKey::PageUp),
-            "pagedown" => Key::Named(NamedKey::PageDown),
-            "shift" | "shiftleft" | "shiftright" => Key::Named(NamedKey::Shift),
-            "control" | "ctrl" | "controlleft" | "controlright" => Key::Named(NamedKey::Control),
-            "alt" | "altleft" | "altright" => Key::Named(NamedKey::Alt),
-            "meta" | "super" | "metaleft" | "metaright" => Key::Named(NamedKey::Meta),
-            _ if key_label.chars().count() == 1 => Key::Character(key_label.into()),
-            _ => Key::Named(NamedKey::Unidentified),
-        }
     }
 
     #[no_mangle]
