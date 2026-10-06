@@ -19,7 +19,7 @@ Then fully restart the app process.
 
 ```bash
 flutter_rust_bridge_codegen generate
-cargo build --release --manifest-path rust/Cargo.toml
+cargo build --release --manifest-path packages/flutter_servo/rust/Cargo.toml
 flutter pub get
 flutter build linux
 ```
@@ -28,5 +28,5 @@ flutter build linux
 
 - Any change to Rust API structs/functions exposed through FRB must be followed by:
   1. `flutter_rust_bridge_codegen generate`
-  2. `cargo build --release --manifest-path rust/Cargo.toml`
+  2. `cargo build --release --manifest-path packages/flutter_servo/rust/Cargo.toml`
 - Prefer running `./tools/rebuild_rust_bridge.sh` before local release builds.

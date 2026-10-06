@@ -8,7 +8,7 @@ echo "[1/5] Generating flutter_rust_bridge bindings..."
 flutter_rust_bridge_codegen generate
 
 echo "[2/5] Checking Rust bridge..."
-cargo check --manifest-path rust/Cargo.toml
+cargo check --manifest-path packages/flutter_servo/rust/Cargo.toml
 
 echo "[3/5] Refreshing package dependencies..."
 (cd packages/flutter_servo && flutter pub get)
