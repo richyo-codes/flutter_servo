@@ -10,10 +10,107 @@ void main() {
 
   const channel = MethodChannel('flutter_servo');
 
+  Future<void> sendProgress(int value) async {
+    final reply = Completer<void>();
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall('loadStateChanged', value),
+          ),
+          (_) => reply.complete(),
+        );
+    await reply.future;
+  }
+
   tearDown(() async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+
+  for (final crash in [true, false]) {
+    testWidgets(
+      crash
+          ? 'reports native crashes once until retry'
+          : 'times out stalled native loads',
+      (tester) async {
+        final errors = <PlatformException>[];
+        final progress = <FlutterServoLoadProgress>[];
+        final calls = <MethodCall>[];
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call);
+              if (call.method == 'createTexture' ||
+                  call.method == 'resizeTexture') {
+                return 1;
+              }
+              return true;
+            });
+        var revision = 0;
+        late StateSetter update;
+        await tester.pumpWidget(
+          MaterialApp(
+            home: StatefulBuilder(
+              builder: (context, setState) {
+                update = setState;
+                return FlutterServoSurface.html(
+                  content: '<p>Recovery target</p>',
+                  reloadRevision: revision,
+                  loadTimeout: const Duration(milliseconds: 100),
+                  onError: errors.add,
+                  onLoadProgressChanged: progress.add,
+                  fallback: const SizedBox(),
+                );
+              },
+            ),
+          ),
+        );
+        await tester.pump();
+        await sendProgress(0);
+        if (crash) {
+          await sendProgress(3);
+          await sendProgress(3);
+        }
+        await tester.pump(const Duration(seconds: 1));
+        expect(
+          errors.single.code,
+          crash ? 'servo-crashed' : 'servo-load-timeout',
+        );
+        expect(progress.last, FlutterServoLoadProgress.failed);
+        await sendProgress(2);
+        expect(progress.last, FlutterServoLoadProgress.failed);
+        final refreshes = calls
+            .where((call) => call.method == 'refreshTexture')
+            .length;
+        await tester.pump(const Duration(seconds: 3));
+        expect(
+          calls.where((call) => call.method == 'refreshTexture').length,
+          refreshes,
+        );
+        update(() => revision++);
+        await tester.pump();
+        await tester.pump();
+        if (!crash) {
+          // A stalled retry may not produce another native "started" callback.
+          await tester.pump(const Duration(seconds: 1));
+          expect(errors, hasLength(2));
+          expect(progress.last, FlutterServoLoadProgress.failed);
+          update(() => revision++);
+          await tester.pump();
+          await tester.pump();
+        }
+        await sendProgress(0);
+        await sendProgress(2);
+        expect(progress.last, FlutterServoLoadProgress.complete);
+        expect(errors, hasLength(crash ? 1 : 2));
+        expect(
+          calls.where((call) => call.method == 'setHtml'),
+          hasLength(crash ? 2 : 3),
+        );
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets('reports failed loads once and allows explicit reload', (
     tester,
@@ -392,7 +489,11 @@ void main() {
     await sendLoadProgress(1);
     await sendLoadProgress(2);
 
-    expect(progress, FlutterServoLoadProgress.values);
+    expect(progress, [
+      FlutterServoLoadProgress.started,
+      FlutterServoLoadProgress.firstFrame,
+      FlutterServoLoadProgress.complete,
+    ]);
     expect(loading, [true, true, false]);
   });
 

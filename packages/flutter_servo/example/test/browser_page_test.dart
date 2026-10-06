@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_servo_example/main.dart';
@@ -17,6 +19,62 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+
+  for (final nativeCrash in [true, false]) {
+    testWidgets(
+      nativeCrash
+          ? 'offers retry after a native crash'
+          : 'offers retry after a rejected load',
+      (tester) async {
+        tester.view.physicalSize = const Size(360, 640);
+        tester.view.devicePixelRatio = 1;
+        addTearDown(tester.view.resetPhysicalSize);
+        addTearDown(tester.view.resetDevicePixelRatio);
+        final calls = <MethodCall>[];
+        var rejectLoad = !nativeCrash;
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              calls.add(call);
+              if (call.method == 'createTexture' ||
+                  call.method == 'resizeTexture') {
+                return 1;
+              }
+              if (call.method == 'setUrl' && rejectLoad) {
+                throw PlatformException(code: 'session-update-failed');
+              }
+              return true;
+            });
+        await tester.pumpWidget(const ServoBrowserApp());
+        await tester.pump();
+        await tester.pump();
+        if (nativeCrash) {
+          final reply = Completer<void>();
+          await TestDefaultBinaryMessengerBinding
+              .instance
+              .defaultBinaryMessenger
+              .handlePlatformMessage(
+                channel.name,
+                const StandardMethodCodec().encodeMethodCall(
+                  const MethodCall('loadStateChanged', 3),
+                ),
+                (_) => reply.complete(),
+              );
+          await reply.future;
+          await tester.pump();
+        }
+        expect(find.text('Page could not be rendered'), findsOneWidget);
+        expect(find.byType(LinearProgressIndicator), findsNothing);
+        rejectLoad = false;
+        await tester.tap(find.text('Try Again'));
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('Page could not be rendered'), findsNothing);
+        expect(calls.where((call) => call.method == 'setUrl'), hasLength(2));
+        expect(calls.where((call) => call.method == 'reload'), isEmpty);
+        await tester.pumpWidget(const SizedBox.shrink());
+      },
+    );
+  }
 
   testWidgets('Ctrl+L focuses, replaces, and submits the address', (
     tester,

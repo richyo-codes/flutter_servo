@@ -120,6 +120,7 @@ mod imp {
         load_status: Cell<LoadStatus>,
         animating: Cell<bool>,
         frame_epoch: Cell<u64>,
+        crashed: Cell<bool>,
     }
 
     impl Default for SessionDelegate {
@@ -130,6 +131,7 @@ mod imp {
                 load_status: Cell::new(LoadStatus::Started),
                 animating: Cell::new(false),
                 frame_epoch: Cell::new(0),
+                crashed: Cell::new(false),
             }
         }
     }
@@ -156,11 +158,17 @@ mod imp {
 
     impl WebViewDelegate for SessionDelegate {
         fn notify_new_frame_ready(&self, _webview: WebView) {
+            if self.crashed.get() {
+                return;
+            }
             self.frame_ready.set(true);
             self.frame_epoch.set(self.frame_epoch.get().wrapping_add(1));
         }
 
         fn notify_load_status_changed(&self, _webview: WebView, status: LoadStatus) {
+            if self.crashed.get() {
+                return;
+            }
             eprintln!("flutter_servo: rust delegate load status {status:?}");
             if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete) {
                 self.document_ready.set(true);
@@ -169,7 +177,17 @@ mod imp {
         }
 
         fn notify_animating_changed(&self, _webview: WebView, animating: bool) {
-            self.animating.set(animating);
+            self.animating.set(animating && !self.crashed.get());
+        }
+
+        fn notify_crashed(&self, _webview: WebView, reason: String, backtrace: Option<String>) {
+            eprintln!("flutter_servo: Servo page crashed: {reason}");
+            if let Some(backtrace) = backtrace {
+                eprintln!("{backtrace}");
+            }
+            self.crashed.set(true);
+            self.animating.set(false);
+            self.frame_ready.set(false);
         }
     }
 
@@ -292,6 +310,10 @@ mod imp {
         }
 
         fn reload(&mut self) -> bool {
+            if self.delegate.crashed.get() {
+                self.pending_navigation = true;
+                return true;
+            }
             let Some(webview) = self.webview.as_ref() else {
                 return false;
             };
@@ -317,7 +339,9 @@ mod imp {
         }
 
         fn load_progress(&self) -> u8 {
-            if self.delegate.load_status.get() == LoadStatus::Complete {
+            if self.delegate.crashed.get() {
+                3
+            } else if self.delegate.load_status.get() == LoadStatus::Complete {
                 2
             } else if self.delegate.frame_ready.get() {
                 1
@@ -327,6 +351,9 @@ mod imp {
         }
 
         fn poll(&self) -> bool {
+            if self.delegate.crashed.get() {
+                return false;
+            }
             let has_pending_frame = self.delegate.frame_epoch.get() != self.rendered_frame_epoch;
             let was_woken = self.wake_pending.swap(false, Ordering::Relaxed);
             if !self.delegate.animating.get() && !has_pending_frame && !was_woken {
@@ -547,14 +574,32 @@ mod imp {
                     return false;
                 };
                 eprintln!("flutter_servo: rust render loading pending content");
-                self.delegate.begin_navigation();
-                if let Some(webview) = self.webview.as_ref() {
+                if self.delegate.crashed.get() {
+                    let Some(servo) = self.servo.as_ref() else {
+                        return false;
+                    };
+                    // Keep the engine/context, but isolate callbacks from the failed WebView.
+                    let delegate = Rc::new(SessionDelegate::default());
+                    let webview = WebViewBuilder::new(servo, rendering_context.clone())
+                        .delegate(delegate.clone())
+                        .url(url)
+                        .build();
+                    webview.resize(self.size);
+                    self.webview = Some(webview);
+                    self.delegate = delegate;
+                    self.rendered_frame_epoch = 0;
+                } else if let Some(webview) = self.webview.as_ref() {
+                    self.delegate.begin_navigation();
                     webview.load(url);
                 } else {
                     eprintln!("flutter_servo: rust render missing webview for navigation");
                     return false;
                 }
                 self.pending_navigation = false;
+            }
+
+            if self.delegate.crashed.get() {
+                return false;
             }
 
             if !self.delegate.is_scene_ready() {
@@ -586,6 +631,9 @@ mod imp {
         fn spin_until(&self, timeout: Duration, done: impl Fn() -> bool) -> bool {
             let start = Instant::now();
             while !done() {
+                if self.delegate.crashed.get() {
+                    return false;
+                }
                 if start.elapsed() >= timeout {
                     eprintln!("flutter_servo: rust spin_until timed out after {timeout:?}");
                     return false;

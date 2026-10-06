@@ -33,6 +33,8 @@ struct _FlutterServoPlugin {
 
 G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
 
+static constexpr int kFailedLoadProgress = 3;
+
 static bool render_texture(FlutterServoPlugin* self,
                            const gchar* fallback_seed,
                            bool paint_fallback);
@@ -46,8 +48,9 @@ static gboolean pump_servo_frame(gpointer user_data) {
     render_texture(self, "frame-pump", false);
   }
   update_load_progress(self);
-  if (self->wake_fd < 0 || rust_render_bridge_is_animating(
-          self->rust_render_bridge, self->session)) {
+  if (self->load_progress != kFailedLoadProgress &&
+      (self->wake_fd < 0 || rust_render_bridge_is_animating(
+          self->rust_render_bridge, self->session))) {
     self->frame_source_id = g_timeout_add(16, pump_servo_frame, self);
   }
   return G_SOURCE_REMOVE;
@@ -192,7 +195,9 @@ static bool render_texture(FlutterServoPlugin* self,
   }
 
   bool published = rendered;
-  if (!published && paint_fallback) {
+  if (!published && paint_fallback &&
+      rust_render_bridge_load_progress(self->rust_render_bridge, self->session) !=
+          kFailedLoadProgress) {
     g_warning("flutter_servo: linux plugin falling back to placeholder texture");
     servo_texture_paint_placeholder(self->texture, fallback_seed);
     published = true;

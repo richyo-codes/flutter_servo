@@ -54,6 +54,7 @@ class _BrowserPageState extends State<BrowserPage> {
   FlutterServoContentType _contentType = FlutterServoContentType.url;
   int _reloadRevision = 0;
   bool _isLoading = false;
+  PlatformException? _surfaceError;
   FlutterServoLoadProgress _loadProgress = FlutterServoLoadProgress.complete;
   bool _canGoBack = false;
   bool _canGoForward = false;
@@ -144,6 +145,7 @@ class _BrowserPageState extends State<BrowserPage> {
     _addressFocusNode.unfocus();
     setState(() {
       _content = target;
+      _surfaceError = null;
       _contentType = contentType;
       _isLoading = true;
       _loadProgress = FlutterServoLoadProgress.started;
@@ -164,6 +166,7 @@ class _BrowserPageState extends State<BrowserPage> {
 
   void _beginLoading() {
     setState(() {
+      _surfaceError = null;
       _isLoading = true;
       _loadProgress = FlutterServoLoadProgress.started;
     });
@@ -188,6 +191,15 @@ class _BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _reload() async {
+    if (_surfaceError != null) {
+      setState(() {
+        _surfaceError = null;
+        _reloadRevision++;
+        _isLoading = true;
+        _loadProgress = FlutterServoLoadProgress.started;
+      });
+      return;
+    }
     if (!await FlutterServo.reload()) {
       return;
     }
@@ -232,7 +244,18 @@ class _BrowserPageState extends State<BrowserPage> {
     }
     setState(() {
       _loadProgress = progress;
-      _isLoading = progress != FlutterServoLoadProgress.complete;
+      _isLoading =
+          progress == FlutterServoLoadProgress.started ||
+          progress == FlutterServoLoadProgress.firstFrame;
+    });
+  }
+
+  void _handleSurfaceError(PlatformException error) {
+    if (!mounted) return;
+    setState(() {
+      _surfaceError = error;
+      _isLoading = false;
+      _loadProgress = FlutterServoLoadProgress.failed;
     });
   }
 
@@ -289,6 +312,9 @@ class _BrowserPageState extends State<BrowserPage> {
                       onLoadProgressChanged: _handleLoadProgress,
                       onNavigationStateChanged: _handleNavigationState,
                       onQuickSite: _loadQuickSite,
+                      error: _surfaceError,
+                      onError: _handleSurfaceError,
+                      onRetry: _reload,
                     ),
                   ),
                 ),
@@ -551,6 +577,9 @@ class _BrowserViewport extends StatelessWidget {
     required this.onLoadProgressChanged,
     required this.onNavigationStateChanged,
     required this.onQuickSite,
+    required this.error,
+    required this.onError,
+    required this.onRetry,
   });
 
   final String content;
@@ -561,6 +590,9 @@ class _BrowserViewport extends StatelessWidget {
   final ValueChanged<FlutterServoLoadProgress> onLoadProgressChanged;
   final ValueChanged<FlutterServoNavigationState> onNavigationStateChanged;
   final ValueChanged<String> onQuickSite;
+  final PlatformException? error;
+  final ValueChanged<PlatformException> onError;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -572,6 +604,7 @@ class _BrowserViewport extends StatelessWidget {
             reloadRevision: reloadRevision,
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
+            onError: onError,
           )
         : FlutterServoSurface.url(
             content: content,
@@ -579,6 +612,7 @@ class _BrowserViewport extends StatelessWidget {
             reloadRevision: reloadRevision,
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
+            onError: onError,
           );
 
     return DecoratedBox(
@@ -609,7 +643,40 @@ class _BrowserViewport extends StatelessWidget {
               },
             ),
           ),
-          if (loadProgress == FlutterServoLoadProgress.started)
+          if (error != null)
+            Positioned.fill(
+              child: ColoredBox(
+                color: const Color(0xFF10171E),
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Page could not be rendered',
+                          style: Theme.of(context).textTheme.titleLarge,
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          error!.message ??
+                              'The native renderer reported an error.',
+                          textAlign: TextAlign.center,
+                        ),
+                        const SizedBox(height: 20),
+                        FilledButton.icon(
+                          onPressed: onRetry,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Try Again'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          if (error == null && loadProgress == FlutterServoLoadProgress.started)
             const Positioned(
               top: 0,
               left: 0,

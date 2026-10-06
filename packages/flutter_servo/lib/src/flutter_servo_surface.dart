@@ -14,7 +14,7 @@ enum FlutterServoContentType {
   final String methodName;
 }
 
-enum FlutterServoLoadProgress { started, firstFrame, complete }
+enum FlutterServoLoadProgress { started, firstFrame, complete, failed }
 
 class FlutterServoNavigationState {
   const FlutterServoNavigationState({
@@ -38,6 +38,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
     this.onError,
+    this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.url;
 
@@ -50,6 +51,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
     this.onError,
+    this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
   }) : contentType = FlutterServoContentType.html;
 
@@ -61,6 +63,9 @@ class FlutterServoSurface extends StatefulWidget {
   final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
   final ValueChanged<FlutterServoNavigationState>? onNavigationStateChanged;
   final ValueChanged<PlatformException>? onError;
+
+  /// Maximum wait for completion after native loading starts; null disables it.
+  final Duration? loadTimeout;
   final int reloadRevision;
 
   @override
@@ -84,6 +89,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   bool _syncQueued = false;
   bool _textureSyncInFlight = false;
   bool _textureSyncRequested = false;
+  bool _loadFailed = false;
+  Timer? _loadTimeoutTimer;
   bool _deferredRefreshQueued = false;
   bool _refreshInFlight = false;
   bool _refreshRequested = false;
@@ -112,6 +119,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   @override
   void dispose() {
+    _loadTimeoutTimer?.cancel();
     _deferredRefreshTimer?.cancel();
     _resizeSyncTimer?.cancel();
     _pendingMousePosition = null;
@@ -173,6 +181,25 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
     for (final listener in _loadStateListeners.toList()) {
       if (listener.mounted) {
+        if (progress == FlutterServoLoadProgress.failed) {
+          listener._reportError(
+            PlatformException(
+              code: 'servo-crashed',
+              message:
+                  'Servo stopped rendering this page. Try loading it again.',
+            ),
+          );
+          continue;
+        }
+        if (listener._loadFailed) {
+          continue;
+        }
+        if (progress == FlutterServoLoadProgress.started) {
+          listener._startLoadTimeout();
+        } else if (progress == FlutterServoLoadProgress.complete) {
+          listener._loadTimeoutTimer?.cancel();
+          listener._loadTimeoutTimer = null;
+        }
         listener.widget.onLoadProgressChanged?.call(progress);
         listener.widget.onLoadStateChanged?.call(
           progress != FlutterServoLoadProgress.complete,
@@ -181,18 +208,56 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     }
   }
 
+  void _startLoadTimeout() {
+    if (_loadTimeoutTimer != null || widget.loadTimeout == null) return;
+    _loadTimeoutTimer = Timer(widget.loadTimeout!, () {
+      if (mounted) {
+        _reportError(
+          PlatformException(
+            code: 'servo-load-timeout',
+            message: 'The page did not finish loading. Try again.',
+          ),
+        );
+      }
+    });
+  }
+
+  void _reportError(PlatformException error) {
+    if (_loadFailed) return;
+    _loadFailed = true;
+    _focusNode.unfocus();
+    _pendingMousePosition = null;
+    _pendingWheelPosition = null;
+    _pendingWheelDelta = Offset.zero;
+    _loadTimeoutTimer?.cancel();
+    _loadTimeoutTimer = null;
+    _deferredRefreshTimer?.cancel();
+    _deferredRefreshQueued = false;
+    _refreshRequested = false;
+    widget.onLoadProgressChanged?.call(FlutterServoLoadProgress.failed);
+    widget.onLoadStateChanged?.call(false);
+    widget.onError?.call(error);
+  }
+
   @override
   void didUpdateWidget(covariant FlutterServoSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.content != widget.content ||
         oldWidget.contentType != widget.contentType ||
         oldWidget.reloadRevision != widget.reloadRevision) {
+      final retryingFailure = _loadFailed;
+      _loadFailed = false;
+      _loadTimeoutTimer?.cancel();
+      _loadTimeoutTimer = null;
+      // The plugin may suppress a repeated "started" value on a stalled retry.
+      if (retryingFailure) _startLoadTimeout();
       _scheduleTextureSync();
       _queueDeferredTextureRefresh();
     }
   }
 
   void _queueDeferredTextureRefresh() {
+    if (_loadFailed) return;
     _refreshAttemptsRemaining = _maxRefreshAttempts;
     _refreshRequested = true;
     _scheduleDeferredTextureRefresh(_deferredRefreshDelay);
@@ -207,7 +272,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     _deferredRefreshTimer?.cancel();
     _deferredRefreshTimer = Timer(delay, () async {
       _deferredRefreshQueued = false;
-      if (!mounted || _textureId == null || widget.content.trim().isEmpty) {
+      if (!mounted ||
+          _loadFailed ||
+          _textureId == null ||
+          widget.content.trim().isEmpty) {
         return;
       }
       if (_contentUpdateInFlight) {
@@ -227,13 +295,13 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       } on MissingPluginException {
         // The fallback remains visible on unsupported platforms.
       } on PlatformException {
-        if (mounted && _refreshAttemptsRemaining > 0) {
+        if (mounted && !_loadFailed && _refreshAttemptsRemaining > 0) {
           _refreshAttemptsRemaining--;
           retry = true;
         }
       } finally {
         _refreshInFlight = false;
-        if (mounted && (retry || _refreshRequested)) {
+        if (mounted && !_loadFailed && (retry || _refreshRequested)) {
           _scheduleDeferredTextureRefresh(
             retry ? _refreshRetryDelay : _deferredRefreshDelay,
           );
@@ -359,9 +427,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         });
       } on PlatformException catch (error) {
         if (mounted) {
-          widget.onLoadProgressChanged?.call(FlutterServoLoadProgress.complete);
-          widget.onLoadStateChanged?.call(false);
-          widget.onError?.call(error);
+          _reportError(error);
         }
       } finally {
         _textureSyncInFlight = false;
