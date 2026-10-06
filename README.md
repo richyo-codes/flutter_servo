@@ -17,6 +17,20 @@ example app. That native surface is still a demo renderer, but the pixel data
 now comes from the Rust library rather than being painted directly in the Linux
 plugin.
 
+## Dependencies
+
+Servo and its allocator are pinned to the public `v0.6.0` release. Surfman
+0.13.0 uses the public [Surfman fork](https://github.com/richyo-codes/surfman)
+at commit `e645ba4d7258b2724228d233130dbb584e406c32` from
+`fix/no-runtime-env-mutation-v3`. Cargo no longer requires local Servo or
+Surfman checkouts; the committed lockfile records the resolved revisions.
+
+The Surfman patch avoids changing process-wide Mesa environment variables
+after Flutter starts threads. It does not force software or PRIME adapter
+selection. If needed, set `LIBGL_ALWAYS_SOFTWARE` or `DRI_PRIME` before starting
+the app. This remains a downstream workaround pending an upstream solution
+that preserves adapter selection without runtime environment mutation.
+
 ## Commands
 
 Generate bridge bindings:

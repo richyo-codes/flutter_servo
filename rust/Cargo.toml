@@ -21,12 +21,12 @@ servo-engine = [
 flutter_rust_bridge = "=2.13.0"
 dpi = { version = "0.1", optional = true }
 percent-encoding = { version = "2.3", optional = true }
-servo = { path = "/path/to/servo/components/servo", default-features = false, features = ["baked-in-resources", "js_jit"], optional = true }
-servo-allocator = { path = "/path/to/servo/components/allocator", optional = true }
+servo = { git = "https://github.com/servo/servo", tag = "v0.6.0", default-features = false, features = ["baked-in-resources", "js_jit"], optional = true }
+servo-allocator = { git = "https://github.com/servo/servo", tag = "v0.6.0", optional = true }
 url = { version = "2.5", optional = true }
 
 [patch.crates-io]
-surfman = { path = "/path/to/surfman" }
+surfman = { git = "https://github.com/richyo-codes/surfman", rev = "e645ba4d7258b2724228d233130dbb584e406c32" }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
