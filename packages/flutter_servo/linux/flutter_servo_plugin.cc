@@ -777,6 +777,18 @@ static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
   fl_method_call_respond(method_call, response, nullptr);
 }
 
+static void application_shutdown_cb(GApplication* application, FlutterServoPlugin* self) {
+  (void)application;
+  // Channel callbacks retain the plugin. Break that reference before process
+  // teardown, while the graphics display and Servo runtime are still alive.
+  g_object_ref(self);
+  if (self->method_channel) {
+    fl_method_channel_set_method_call_handler(self->method_channel, nullptr, nullptr, nullptr);
+  }
+  g_object_run_dispose(G_OBJECT(self));
+  g_object_unref(self);
+}
+
 void flutter_servo_plugin_register_with_registrar(FlPluginRegistrar* registrar) {
   g_message("flutter_servo: linux plugin register_with_registrar");
   FlutterServoPlugin* plugin = FLUTTER_SERVO_PLUGIN(
@@ -793,6 +805,11 @@ void flutter_servo_plugin_register_with_registrar(FlPluginRegistrar* registrar) 
                                             g_object_ref(plugin),
                                             g_object_unref);
   g_message("flutter_servo: linux plugin method channel ready");
+
+  if (GApplication* application = g_application_get_default()) {
+    g_signal_connect_object(application, "shutdown", G_CALLBACK(application_shutdown_cb), plugin,
+                            static_cast<GConnectFlags>(0));
+  }
 
   g_object_unref(plugin);
 }

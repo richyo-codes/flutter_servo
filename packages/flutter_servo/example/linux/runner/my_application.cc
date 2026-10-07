@@ -16,6 +16,12 @@ struct _MyApplication {
 
 G_DEFINE_TYPE(MyApplication, my_application, GTK_TYPE_APPLICATION)
 
+static gboolean log_close_request(MyApplication* self) {
+  (void)self;
+  g_message("flutter_servo: linux runner window close requested");
+  return FALSE;
+}
+
 // Called when first Flutter frame received.
 static void first_frame_cb(MyApplication* self, FlView* view) {
   g_message("flutter_servo: linux runner received first Flutter frame");
@@ -29,6 +35,11 @@ static void my_application_activate(GApplication* application) {
   MyApplication* self = MY_APPLICATION(application);
   GtkWindow* window =
       GTK_WINDOW(gtk_application_window_new(GTK_APPLICATION(application)));
+#if defined(FLUTTER_LINUX_GTK4)
+  g_signal_connect_swapped(window, "close-request", G_CALLBACK(log_close_request), self);
+#else
+  g_signal_connect_swapped(window, "delete-event", G_CALLBACK(log_close_request), self);
+#endif
 
   // Use a header bar when running in GNOME as this is the common style used
   // by applications and is the setup most users will be using (e.g. Ubuntu
