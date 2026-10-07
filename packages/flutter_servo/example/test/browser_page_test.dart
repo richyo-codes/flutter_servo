@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_servo/flutter_servo.dart';
 import 'package:flutter_servo_example/main.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -93,6 +94,8 @@ void main() {
     await tester.pumpWidget(const ServoBrowserApp());
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
+    await tester.tap(find.byType(FlutterServoSurface));
+    await tester.pump();
     calls.clear();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -104,6 +107,19 @@ void main() {
     final address = find.byType(EditableText);
     expect(address, findsOneWidget);
     expect(tester.widget<EditableText>(address).focusNode.hasFocus, isTrue);
+    final controller = tester.widget<EditableText>(address).controller;
+    expect(
+      controller.selection,
+      TextSelection(baseOffset: 0, extentOffset: controller.text.length),
+    );
+    expect(
+      calls.where(
+        (call) =>
+            call.method == 'notifyKeyEvent' &&
+            (call.arguments as List).first == 'L',
+      ),
+      isEmpty,
+    );
 
     await tester.enterText(find.byType(TextField), 'example.com');
     await tester.testTextInput.receiveAction(TextInputAction.go);
@@ -133,6 +149,8 @@ void main() {
     await tester.pumpWidget(const ServoBrowserApp());
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 40));
+    await tester.tap(find.byType(FlutterServoSurface));
+    await tester.pump();
     calls.clear();
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -144,6 +162,42 @@ void main() {
     expect(calls.where((call) => call.method == 'reload'), hasLength(1));
     expect(find.text('LOADING'), findsOneWidget);
   });
+
+  for (final shortcut in [
+    (LogicalKeyboardKey.f6, null),
+    (LogicalKeyboardKey.keyD, LogicalKeyboardKey.altLeft),
+    (LogicalKeyboardKey.keyK, LogicalKeyboardKey.controlLeft),
+  ]) {
+    testWidgets(
+      'address shortcut ${shortcut.$1.keyLabel} works from webpage focus',
+      (tester) async {
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .setMockMethodCallHandler(channel, (call) async {
+              if (call.method == 'createTexture' ||
+                  call.method == 'resizeTexture') {
+                return 1;
+              }
+              return true;
+            });
+        await tester.pumpWidget(const ServoBrowserApp());
+        await tester.pump();
+        await tester.tap(find.byType(FlutterServoSurface));
+        await tester.pump();
+        if (shortcut.$2 != null) await tester.sendKeyDownEvent(shortcut.$2!);
+        await tester.sendKeyDownEvent(shortcut.$1);
+        await tester.sendKeyUpEvent(shortcut.$1);
+        if (shortcut.$2 != null) await tester.sendKeyUpEvent(shortcut.$2!);
+        await tester.pump();
+        expect(
+          tester
+              .widget<EditableText>(find.byType(EditableText))
+              .focusNode
+              .hasFocus,
+          isTrue,
+        );
+      },
+    );
+  }
 
   for (final size in [const Size(360, 640), const Size(390, 844)]) {
     testWidgets(

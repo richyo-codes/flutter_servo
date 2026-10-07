@@ -49,6 +49,8 @@ class _BrowserPageState extends State<BrowserPage> {
     text: FlutterServo.mvpInitialUrl(),
   );
   final FocusNode _addressFocusNode = FocusNode();
+  final FocusNode _browserFocusNode = FocusNode();
+  final Set<PhysicalKeyboardKey> _handledShortcutKeys = {};
 
   String _content = FlutterServo.mvpInitialUrl();
   FlutterServoContentType _contentType = FlutterServoContentType.url;
@@ -66,11 +68,14 @@ class _BrowserPageState extends State<BrowserPage> {
   @override
   void initState() {
     super.initState();
+    FocusManager.instance.addEarlyKeyEventHandler(_handleBrowserKeyEvent);
     _bookmarksReady = _loadBookmarks();
   }
 
   @override
   void dispose() {
+    FocusManager.instance.removeEarlyKeyEventHandler(_handleBrowserKeyEvent);
+    _browserFocusNode.dispose();
     _addressController.dispose();
     _addressFocusNode.dispose();
     super.dispose();
@@ -128,6 +133,66 @@ class _BrowserPageState extends State<BrowserPage> {
       baseOffset: 0,
       extentOffset: _addressController.text.length,
     );
+  }
+
+  Map<ShortcutActivator, VoidCallback> get _browserShortcuts => {
+    const SingleActivator(LogicalKeyboardKey.keyL, control: true):
+        _focusAddressBar,
+    const SingleActivator(LogicalKeyboardKey.keyK, control: true):
+        _focusAddressBar,
+    const SingleActivator(LogicalKeyboardKey.keyD, alt: true): _focusAddressBar,
+    const SingleActivator(LogicalKeyboardKey.f6): _focusAddressBar,
+    const SingleActivator(
+      LogicalKeyboardKey.keyR,
+      control: true,
+      includeRepeats: false,
+    ): () {
+      _reload();
+    },
+    const SingleActivator(LogicalKeyboardKey.f5, includeRepeats: false): () {
+      _reload();
+    },
+    const SingleActivator(
+      LogicalKeyboardKey.arrowLeft,
+      alt: true,
+      includeRepeats: false,
+    ): () {
+      _goBack();
+    },
+    const SingleActivator(
+      LogicalKeyboardKey.arrowRight,
+      alt: true,
+      includeRepeats: false,
+    ): () {
+      _goForward();
+    },
+    const SingleActivator(
+      LogicalKeyboardKey.keyD,
+      control: true,
+      includeRepeats: false,
+    ): () {
+      _toggleBookmark();
+    },
+  };
+
+  KeyEventResult _handleBrowserKeyEvent(KeyEvent event) {
+    if (!mounted || !_browserFocusNode.hasFocus) return KeyEventResult.ignored;
+    if (event is KeyUpEvent && _handledShortcutKeys.remove(event.physicalKey)) {
+      return KeyEventResult.handled;
+    }
+    if (event is KeyRepeatEvent &&
+        _handledShortcutKeys.contains(event.physicalKey)) {
+      return KeyEventResult.handled;
+    }
+    // Browser commands take precedence over the focused webpage's input handler.
+    for (final shortcut in _browserShortcuts.entries) {
+      if (shortcut.key.accepts(event, HardwareKeyboard.instance)) {
+        _handledShortcutKeys.add(event.physicalKey);
+        shortcut.value();
+        return KeyEventResult.handled;
+      }
+    }
+    return KeyEventResult.ignored;
   }
 
   void _navigate() {
@@ -262,20 +327,9 @@ class _BrowserPageState extends State<BrowserPage> {
   @override
   Widget build(BuildContext context) {
     return CallbackShortcuts(
-      bindings: {
-        const SingleActivator(LogicalKeyboardKey.keyL, control: true):
-            _focusAddressBar,
-        const SingleActivator(LogicalKeyboardKey.keyR, control: true): () {
-          _reload();
-        },
-        const SingleActivator(LogicalKeyboardKey.arrowLeft, alt: true): () {
-          _goBack();
-        },
-        const SingleActivator(LogicalKeyboardKey.arrowRight, alt: true): () {
-          _goForward();
-        },
-      },
+      bindings: _browserShortcuts,
       child: Focus(
+        focusNode: _browserFocusNode,
         autofocus: true,
         child: Scaffold(
           body: SafeArea(
