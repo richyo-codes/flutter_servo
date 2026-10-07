@@ -41,47 +41,6 @@ class ScopedMutexLock {
   GMutex* mutex_;
 };
 
-constexpr uint8_t kAlpha = 255;
-
-uint32_t hash_seed(const gchar* seed) {
-  uint32_t value = 2166136261u;
-  if (seed == nullptr) {
-    return value;
-  }
-
-  for (const unsigned char* ptr =
-           reinterpret_cast<const unsigned char*>(seed);
-       *ptr != '\0'; ptr++) {
-    value ^= *ptr;
-    value *= 16777619u;
-  }
-  return value;
-}
-
-void write_pixel(uint8_t* pixel, uint8_t r, uint8_t g, uint8_t b) {
-  pixel[0] = r;
-  pixel[1] = g;
-  pixel[2] = b;
-  pixel[3] = kAlpha;
-}
-
-void fill_rect(ServoTexture* self,
-               uint32_t x,
-               uint32_t y,
-               uint32_t width,
-               uint32_t height,
-               uint8_t r,
-               uint8_t g,
-               uint8_t b) {
-  const uint32_t max_x = std::min(self->width, x + width);
-  const uint32_t max_y = std::min(self->height, y + height);
-  for (uint32_t yy = y; yy < max_y; yy++) {
-    for (uint32_t xx = x; xx < max_x; xx++) {
-      uint8_t* pixel = self->back_buffer + ((yy * self->width + xx) * 4);
-      write_pixel(pixel, r, g, b);
-    }
-  }
-}
 
 void ensure_buffer_locked(ServoTexture* self) {
   const size_t size = static_cast<size_t>(self->width) * self->height * 4;
@@ -283,59 +242,7 @@ bool servo_texture_publish_bytes(ServoTexture* self,
 
 void servo_texture_paint_placeholder(ServoTexture* self, const gchar* seed) {
   g_return_if_fail(SERVO_IS_TEXTURE(self));
-
-  const uint32_t hash = hash_seed(seed);
-  const uint8_t accent_r = 48 + (hash & 0x3f);
-  const uint8_t accent_g = 110 + ((hash >> 8) & 0x4f);
-  const uint8_t accent_b = 120 + ((hash >> 16) & 0x5f);
-
-  for (uint32_t y = 0; y < self->height; y++) {
-    for (uint32_t x = 0; x < self->width; x++) {
-      const float yf =
-          self->height > 1 ? static_cast<float>(y) / (self->height - 1) : 0.f;
-      const float xf =
-          self->width > 1 ? static_cast<float>(x) / (self->width - 1) : 0.f;
-
-      uint8_t r = static_cast<uint8_t>(250 - yf * 18 - xf * 4);
-      uint8_t g = static_cast<uint8_t>(247 - yf * 10 + xf * 4);
-      uint8_t b = static_cast<uint8_t>(241 - yf * 6 + xf * 8);
-      uint8_t* pixel = self->back_buffer + ((y * self->width + x) * 4);
-      write_pixel(pixel, r, g, b);
-    }
-  }
-
-  const uint32_t toolbar_height = std::max(56u, self->height / 9);
-  fill_rect(self, 0, 0, self->width, toolbar_height, 230, 233, 229);
-
-  const uint32_t address_x = std::max(24u, self->width / 8);
-  const uint32_t address_y = toolbar_height / 4;
-  const uint32_t address_width = std::min(self->width - address_x * 2,
-                                          self->width * 3 / 4);
-  const uint32_t address_height = std::max(28u, toolbar_height / 2);
-  fill_rect(self, address_x, address_y, address_width, address_height, 246, 247,
-            245);
-
-  const uint32_t hero_margin = std::max(36u, self->width / 18);
-  const uint32_t hero_y = toolbar_height + std::max(28u, self->height / 24);
-  const uint32_t hero_height = std::max(84u, self->height / 5);
-  fill_rect(self, hero_margin, hero_y, self->width - hero_margin * 2,
-            hero_height, accent_r, accent_g, accent_b);
-
-  const uint32_t card_y =
-      hero_y + hero_height + std::max(24u, self->height / 32);
-  const uint32_t card_width = self->width - hero_margin * 2;
-  const uint32_t card_height =
-      std::max(160u, self->height - card_y - std::max(32u, self->height / 28));
-  fill_rect(self, hero_margin, card_y, card_width, card_height, 255, 255, 255);
-
-  const uint32_t line_x = hero_margin + std::max(18u, self->width / 48);
-  uint32_t line_y = card_y + std::max(22u, self->height / 40);
-  for (int i = 0; i < 6; i++) {
-    const uint32_t line_width =
-        card_width - std::max(36u, self->width / 20) - (i % 2 == 0 ? 0 : 64);
-    fill_rect(self, line_x, line_y, line_width, 12, 213, 218, 214);
-    line_y += 26;
-  }
-
+  (void)seed;
+  std::fill_n(self->back_buffer, servo_texture_get_buffer_size(self), 0);
   servo_texture_publish_frame(self);
 }

@@ -40,6 +40,48 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  testWidgets(
+    'keeps loading UI until a real frame, preserves it during navigation',
+    (tester) async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'createTexture' ||
+                call.method == 'resizeTexture') {
+              return 1;
+            }
+            return true;
+          });
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: FlutterServoSurface.html(
+            content: '<p>Page</p>',
+            fallback: Text('Opening page'),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Opening page'), findsOneWidget);
+      expect(find.byType(Texture), findsOneWidget);
+      await sendProgress(2);
+      await tester.pump();
+      expect(find.text('Opening page'), findsOneWidget);
+      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .handlePlatformMessage(
+            channel.name,
+            const StandardMethodCodec().encodeMethodCall(
+              const MethodCall('frameAvailable'),
+            ),
+            (_) {},
+          );
+      await tester.pump();
+      expect(find.text('Opening page'), findsNothing);
+      await sendProgress(0);
+      await tester.pump();
+      expect(find.text('Opening page'), findsNothing);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
   for (final crash in [true, false]) {
     testWidgets(
       crash

@@ -29,15 +29,14 @@ struct _FlutterServoPlugin {
   guint wake_source_id;
   int wake_fd;
   int load_progress;
+  bool has_frame;
 };
 
 G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
 
 static constexpr int kFailedLoadProgress = 3;
 
-static bool render_texture(FlutterServoPlugin* self,
-                           const gchar* fallback_seed,
-                           bool paint_fallback);
+static bool render_texture(FlutterServoPlugin* self);
 static void update_load_progress(FlutterServoPlugin* self);
 
 static void dispatch_control_events(FlutterServoPlugin* self) {
@@ -56,7 +55,7 @@ static gboolean pump_servo_frame(gpointer user_data) {
   self->frame_source_id = 0;
   if (self->session != nullptr && self->texture != nullptr &&
       rust_render_bridge_poll(self->rust_render_bridge, self->session)) {
-    render_texture(self, "frame-pump", false);
+    render_texture(self);
   }
   update_load_progress(self);
   dispatch_control_events(self);
@@ -174,9 +173,7 @@ static bool ensure_session(FlutterServoPlugin* self) {
   return self->session != nullptr;
 }
 
-static bool render_texture(FlutterServoPlugin* self,
-                           const gchar* fallback_seed,
-                           bool paint_fallback) {
+static bool render_texture(FlutterServoPlugin* self) {
   if (self->texture == nullptr) {
     g_warning("flutter_servo: linux plugin render requested before texture creation");
     return false;
@@ -206,20 +203,16 @@ static bool render_texture(FlutterServoPlugin* self,
     }
   }
 
-  bool published = rendered;
-  if (!published && paint_fallback &&
-      rust_render_bridge_load_progress(self->rust_render_bridge, self->session) !=
-          kFailedLoadProgress) {
-    g_warning("flutter_servo: linux plugin falling back to placeholder texture");
-    servo_texture_paint_placeholder(self->texture, fallback_seed);
-    published = true;
-  }
-
-  if (published) {
+  if (rendered) {
     fl_texture_registrar_mark_texture_frame_available(self->texture_registrar,
                                                       FL_TEXTURE(self->texture));
   }
   if (rendered) {
+    if (!self->has_frame) {
+      self->has_frame = true;
+      fl_method_channel_invoke_method(self->method_channel, "frameAvailable",
+                                      nullptr, nullptr, nullptr, nullptr);
+    }
     send_navigation_state_changed(self);
   }
   update_load_progress(self);
@@ -488,7 +481,7 @@ static FlMethodResponse* handle_resize_texture(FlutterServoPlugin* self,
   servo_texture_resize(self->texture, width, height);
   if (self->session == nullptr) {
     publish_placeholder_texture(self, "resize");
-  } else if (!render_texture(self, "resize", false)) {
+  } else if (!render_texture(self)) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "render-failed", "Failed to render resized content.", nullptr));
   }
@@ -504,7 +497,7 @@ static FlMethodResponse* handle_refresh_texture(FlutterServoPlugin* self) {
         "session-missing", "Load content before refreshing the Servo texture.",
         nullptr));
   }
-  if (!render_texture(self, "refresh", false)) {
+  if (!render_texture(self)) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "render-failed", "Failed to refresh Servo content.", nullptr));
   }
@@ -535,7 +528,7 @@ static FlMethodResponse* handle_navigation_command(FlutterServoPlugin* self,
   send_load_state_changed(self, 0);
   // Navigation acceptance is independent of whether Servo has a framebuffer
   // ready synchronously. The wake-driven frame pump publishes it later.
-  render_texture(self, command, false);
+  render_texture(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(
       fl_value_new_bool(true)));
 }
@@ -557,7 +550,7 @@ static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
   }
   // Navigation is accepted even when its first frame is not ready yet. Dart
   // schedules bounded refresh attempts without blocking the platform thread.
-  render_texture(self, url, true);
+  render_texture(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
@@ -576,7 +569,7 @@ static FlMethodResponse* handle_set_html(FlutterServoPlugin* self,
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
         "session-update-failed", "Failed to set HTML content.", nullptr));
   }
-  render_texture(self, html, true);
+  render_texture(self);
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 

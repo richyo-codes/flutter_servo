@@ -650,7 +650,7 @@ class _BrowserViewport extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallback = _StartSurface(onQuickSite: onQuickSite);
+    final fallback = _PageLoadingSurface(content: content);
     final surface = contentType == FlutterServoContentType.html
         ? FlutterServoSurface.html(
             content: content,
@@ -745,100 +745,32 @@ class _BrowserViewport extends StatelessWidget {
   }
 }
 
-class _StartSurface extends StatelessWidget {
-  const _StartSurface({required this.onQuickSite});
+class _PageLoadingSurface extends StatelessWidget {
+  const _PageLoadingSurface({required this.content});
 
-  final ValueChanged<String> onQuickSite;
+  final String content;
 
   @override
   Widget build(BuildContext context) {
-    final textTheme = Theme.of(context).textTheme;
-    return DecoratedBox(
-      decoration: const BoxDecoration(
-        gradient: RadialGradient(
-          center: Alignment(-0.7, -0.8),
-          radius: 1.3,
-          colors: [Color(0xFF263744), Color(0xFF10171E)],
-        ),
-      ),
-      child: LayoutBuilder(
-        builder: (context, constraints) => SingleChildScrollView(
-          padding: const EdgeInsets.all(32),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              minHeight: (constraints.maxHeight - 64).clamp(0, double.infinity),
-            ),
-            child: IntrinsicHeight(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const _StatePill(label: 'SERVO 0.4', active: true),
-                  const Spacer(),
-                  Text(
-                    'A browser shell\nfor an embeddable engine.',
-                    style: textTheme.displaySmall?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      height: 0.98,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Use the address bar for URLs, search terms, data URLs, or raw HTML. The buttons below load real Servo pages.',
-                    style: TextStyle(color: Color(0xFFC3CED7), height: 1.45),
-                  ),
-                  const SizedBox(height: 28),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _QuickSiteButton(
-                        label: 'RichYoung.ca',
-                        icon: Icons.public,
-                        onPressed: () => onQuickSite('https://richyoung.ca'),
-                      ),
-                      _QuickSiteButton(
-                        label: 'Servo',
-                        icon: Icons.rocket_launch_outlined,
-                        onPressed: () => onQuickSite('https://servo.org'),
-                      ),
-                      _QuickSiteButton(
-                        label: 'Search',
-                        icon: Icons.search,
-                        onPressed: () => onQuickSite('servo browser embedding'),
-                      ),
-                    ],
-                  ),
-                  const Spacer(flex: 2),
-                ],
+    final host = Uri.tryParse(content)?.host ?? '';
+    return ColoredBox(
+      color: const Color(0xFF10171E),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.language, size: 28, color: Color(0xFF93A1AD)),
+              const SizedBox(height: 18),
+              Text(
+                host.isEmpty ? 'Opening page' : 'Opening $host',
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleMedium,
               ),
-            ),
+            ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _QuickSiteButton extends StatelessWidget {
-  const _QuickSiteButton({
-    required this.label,
-    required this.icon,
-    required this.onPressed,
-  });
-
-  final String label;
-  final IconData icon;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return OutlinedButton.icon(
-      onPressed: onPressed,
-      icon: Icon(icon, size: 18),
-      label: Text(label),
-      style: OutlinedButton.styleFrom(
-        foregroundColor: const Color(0xFFF3F6F8),
-        side: const BorderSide(color: Color(0xFF536673)),
       ),
     );
   }

@@ -90,6 +90,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   final FocusNode _focusNode = FocusNode(debugLabel: 'flutter_servo_surface');
   int? _textureId;
+  bool _hasFrame = false;
   Size? _logicalSize;
   double? _devicePixelRatio;
   int? _textureWidth;
@@ -251,6 +252,14 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   static Future<void> _handlePlatformMethodCall(MethodCall call) async {
+    if (call.method == 'frameAvailable') {
+      for (final listener in _loadStateListeners.toList()) {
+        if (listener.mounted && !listener._hasFrame) {
+          listener.setState(() => listener._hasFrame = true);
+        }
+      }
+      return;
+    }
     if (call.method == 'embedderControl') {
       final event =
           jsonDecode(call.arguments as String) as Map<String, dynamic>;
@@ -749,7 +758,13 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             ? widget.fallback
             : ClipRRect(
                 borderRadius: BorderRadius.circular(18),
-                child: Texture(textureId: _textureId!),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Texture(textureId: _textureId!),
+                    if (!_hasFrame) widget.fallback,
+                  ],
+                ),
               );
 
         if (!widget.enableInputPlumbing) {
