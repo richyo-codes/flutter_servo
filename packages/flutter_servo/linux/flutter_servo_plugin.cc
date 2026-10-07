@@ -40,6 +40,17 @@ static bool render_texture(FlutterServoPlugin* self,
                            bool paint_fallback);
 static void update_load_progress(FlutterServoPlugin* self);
 
+static void dispatch_control_events(FlutterServoPlugin* self) {
+  for (int i = 0; i < 64; i++) {
+    g_autofree gchar* event = rust_render_bridge_take_control_event(
+        self->rust_render_bridge, self->session);
+    if (!event) break;
+    g_autoptr(FlValue) args = fl_value_new_string(event);
+    fl_method_channel_invoke_method(self->method_channel, "embedderControl",
+                                    args, nullptr, nullptr, nullptr);
+  }
+}
+
 static gboolean pump_servo_frame(gpointer user_data) {
   FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(user_data);
   self->frame_source_id = 0;
@@ -48,6 +59,7 @@ static gboolean pump_servo_frame(gpointer user_data) {
     render_texture(self, "frame-pump", false);
   }
   update_load_progress(self);
+  dispatch_control_events(self);
   if (self->load_progress != kFailedLoadProgress &&
       (self->wake_fd < 0 || rust_render_bridge_is_animating(
           self->rust_render_bridge, self->session))) {
@@ -766,6 +778,14 @@ static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
     response = handle_notify_mouse_wheel(plugin, method_call);
   } else if (strcmp(method, "notifyKeyEvent") == 0) {
     response = handle_notify_key_event(plugin, method_call);
+  } else if (strcmp(method, "respondToControl") == 0) {
+    FlValue* args = fl_method_call_get_args(method_call);
+    const bool accepted = fl_value_get_type(args) == FL_VALUE_TYPE_STRING &&
+        rust_render_bridge_control_response(plugin->rust_render_bridge,
+            plugin->session, fl_value_get_string(args));
+    if (accepted) schedule_servo_frame(plugin);
+    g_autoptr(FlValue) result = fl_value_new_bool(accepted);
+    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
   } else if (strcmp(method, "focusWebView") == 0) {
     response = handle_focus_webview(plugin);
   } else if (strcmp(method, "blurWebView") == 0) {

@@ -1,4 +1,6 @@
 pub mod api;
+#[cfg(feature = "servo-engine")]
+mod embedder_controls;
 mod frb_generated;
 #[cfg(any(feature = "servo-engine", test))]
 mod keyboard_input;

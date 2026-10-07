@@ -120,6 +120,7 @@ mod imp {
         animating: Cell<bool>,
         frame_epoch: Cell<u64>,
         crashed: Cell<bool>,
+        controls: RefCell<crate::embedder_controls::Controls>,
     }
 
     impl Default for SessionDelegate {
@@ -131,12 +132,14 @@ mod imp {
                 animating: Cell::new(false),
                 frame_epoch: Cell::new(0),
                 crashed: Cell::new(false),
+                controls: RefCell::new(crate::embedder_controls::Controls::default()),
             }
         }
     }
 
     impl SessionDelegate {
         fn begin_navigation(&self) {
+            self.controls.borrow_mut().reset();
             self.document_ready.set(false);
             self.frame_ready.set(false);
             self.load_status.set(LoadStatus::Started);
@@ -156,6 +159,16 @@ mod imp {
     }
 
     impl WebViewDelegate for SessionDelegate {
+        fn show_embedder_control(&self, _webview: WebView, control: servo::EmbedderControl) {
+            if !self.crashed.get() {
+                self.controls.borrow_mut().show(control);
+            }
+        }
+
+        fn hide_embedder_control(&self, _webview: WebView, id: servo::EmbedderControlId) {
+            self.controls.borrow_mut().hide(id);
+        }
+
         fn notify_new_frame_ready(&self, _webview: WebView) {
             if self.crashed.get() {
                 return;
@@ -185,6 +198,7 @@ mod imp {
                 eprintln!("{backtrace}");
             }
             self.crashed.set(true);
+            self.controls.borrow_mut().reset();
             self.animating.set(false);
             self.frame_ready.set(false);
         }
@@ -642,6 +656,7 @@ mod imp {
     impl Drop for ServoRenderSession {
         fn drop(&mut self) {
             eprintln!("flutter_servo: rust session shutdown start");
+            self.delegate.controls.borrow_mut().reset();
             if let Some(context) = self.rendering_context.as_ref() {
                 // Flutter may have changed the current GL context since the last paint.
                 let _ = context.make_current();
@@ -921,6 +936,87 @@ mod imp {
             KeyState::Up
         };
         session.send_keyboard_event(key_label, character, key_state)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_take_control_event(
+        session: *mut c_void,
+    ) -> *mut c_char {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return null_mut();
+        };
+        session
+            .delegate
+            .controls
+            .borrow_mut()
+            .take_event()
+            .and_then(|event| std::ffi::CString::new(event).ok())
+            .map_or(null_mut(), std::ffi::CString::into_raw)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_control_event_free(event: *mut c_char) {
+        if !event.is_null() {
+            drop(std::ffi::CString::from_raw(event));
+        }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_control_response(
+        session: *mut c_void,
+        response: *const c_char,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        let Some(response) = c_string(response) else {
+            return false;
+        };
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(response) else {
+            return false;
+        };
+        match value["type"].as_str() {
+            Some("contextMenu") => {
+                let Some(id) = value["id"].as_u64() else {
+                    return false;
+                };
+                session.delegate.controls.borrow_mut().respond(
+                    id,
+                    value["index"]
+                        .as_u64()
+                        .and_then(|index| usize::try_from(index).ok()),
+                )
+            }
+            Some("composition") => {
+                if session.delegate.crashed.get()
+                    || !value["id"]
+                        .as_u64()
+                        .is_some_and(|id| session.delegate.controls.borrow().ime_matches(id))
+                {
+                    return false;
+                }
+                let Some(webview) = session.webview.as_ref() else {
+                    return false;
+                };
+                let state = match value["state"].as_str() {
+                    Some("start") => servo::CompositionState::Start,
+                    Some("update") => servo::CompositionState::Update,
+                    Some("end") => servo::CompositionState::End,
+                    _ => return false,
+                };
+                let Some(text) = value["text"].as_str() else {
+                    return false;
+                };
+                webview.notify_input_event(InputEvent::Ime(servo::ImeEvent::Composition(
+                    servo::CompositionEvent {
+                        state,
+                        data: text.to_owned(),
+                    },
+                )));
+                true
+            }
+            _ => false,
+        }
     }
 
     #[no_mangle]

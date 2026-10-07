@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +10,17 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   const channel = MethodChannel('flutter_servo');
+
+  Future<void> sendControl(Map<String, Object?> event) async {
+    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .handlePlatformMessage(
+          channel.name,
+          const StandardMethodCodec().encodeMethodCall(
+            MethodCall('embedderControl', jsonEncode(event)),
+          ),
+          (_) {},
+        );
+  }
 
   Future<void> sendProgress(int value) async {
     final reply = Completer<void>();
@@ -302,12 +314,15 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('forwards repeats and offers editing shortcuts', (tester) async {
+  testWidgets('forwards repeats and resolves page-specific menus', (
+    tester,
+  ) async {
     final calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
           calls.add(call);
-          if (call.method == 'createTexture' || call.method == 'resizeTexture') {
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
             return 1;
           }
           return true;
@@ -346,23 +361,61 @@ void main() {
       buttons: kSecondaryMouseButton,
     );
     await pointer.up();
+    await sendControl({
+      'type': 'contextMenu',
+      'id': 7,
+      'x': 80,
+      'y': 80,
+      'items': [
+        {'index': 0, 'label': 'Copy link address', 'enabled': true},
+        {'index': 1, 'label': 'Open link in new window', 'enabled': false},
+      ],
+    });
     await tester.pumpAndSettle();
-    expect(find.text('Copy'), findsOneWidget);
-    await tester.tap(find.text('Copy'));
+    expect(find.text('Copy link address'), findsOneWidget);
+    expect(
+      tester
+          .widget<PopupMenuItem<int>>(
+            find.ancestor(
+              of: find.text('Open link in new window'),
+              matching: find.byType(PopupMenuItem<int>),
+            ),
+          )
+          .enabled,
+      isFalse,
+    );
+    await tester.tap(find.text('Copy link address'));
     await tester.pumpAndSettle();
     expect(
       calls
-          .where((call) => call.method == 'notifyKeyEvent')
-          .map((call) => call.arguments)
+          .where((call) => call.method == 'respondToControl')
+          .map((call) => jsonDecode(call.arguments as String))
           .toList(),
       [
-        ['Control', '', true],
-        ['c', 'c', true],
-        ['c', '', false],
-        ['Control', '', false],
+        {'type': 'contextMenu', 'id': 7, 'index': 0},
       ],
     );
-    expect(calls.where((call) => call.method == 'notifyMouseButton'), isEmpty);
+    expect(
+      calls.where((call) => call.method == 'notifyMouseButton'),
+      hasLength(2),
+    );
+
+    await sendControl({
+      'type': 'contextMenu',
+      'id': 8,
+      'x': 80,
+      'y': 80,
+      'items': [
+        {'index': 0, 'label': 'Copy', 'enabled': true},
+      ],
+    });
+    await tester.pumpAndSettle();
+    await sendControl({'type': 'hideContextMenu', 'id': 7});
+    await tester.pumpAndSettle();
+    expect(find.text('Copy'), findsOneWidget);
+    await sendControl({'type': 'hideContextMenu', 'id': 8});
+    await tester.pumpAndSettle();
+    expect(find.text('Copy'), findsNothing);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 

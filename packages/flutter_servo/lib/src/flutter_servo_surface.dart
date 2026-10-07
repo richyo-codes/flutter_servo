@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
+import 'servo_text_input.dart';
 
 enum FlutterServoContentType {
   url('setUrl'),
@@ -62,7 +65,7 @@ class FlutterServoSurface extends StatefulWidget {
   final Widget fallback;
   final bool enableInputPlumbing;
 
-  /// Shows a basic editing menu; requires a Material host. Not a page DOM menu.
+  /// Shows Servo's page-specific context menu; requires a Material host.
   final bool enableContextMenu;
   final ValueChanged<bool>? onLoadStateChanged;
   final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
@@ -112,44 +115,113 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   Offset? _pendingMousePosition;
   Offset? _pendingWheelPosition;
   Offset _pendingWheelDelta = Offset.zero;
-  int? _contextMenuPointer;
+  int? _menuId;
+  PopupRoute<int>? _menuRoute;
+  final Set<PhysicalKeyboardKey> _imeKeys = {};
+  late final ServoTextInput _textInput = ServoTextInput(
+    sendComposition: (id, state, text) => _respondToControl({
+      'type': 'composition',
+      'id': id,
+      'state': state,
+      'text': text,
+    }),
+    sendEnter: () async {
+      await _channel.invokeMethod<void>('notifyKeyEvent', ['Enter', '', true]);
+      await _channel.invokeMethod<void>('notifyKeyEvent', ['Enter', '', false]);
+    },
+  );
 
-  Future<void> _showEditingMenu(Offset globalPosition) async {
+  Future<void> _respondToControl(Map<String, Object?> response) async {
+    await _channel.invokeMethod<bool>('respondToControl', jsonEncode(response));
+  }
+
+  void _hideMenu() {
+    final route = _menuRoute;
+    _menuRoute = null;
+    _menuId = null;
+    if (route != null && route.isActive) route.navigator?.removeRoute(route);
+  }
+
+  void _handleControl(Map<String, dynamic> event) {
+    switch (event['type']) {
+      case 'contextMenu':
+        unawaited(_showPageMenu(event));
+      case 'hideContextMenu':
+        if (_menuId == event['id']) _hideMenu();
+      case 'hideIme':
+        _textInput.close();
+      case 'ime':
+        if (!_focusNode.hasFocus ||
+            !widget.enableInputPlumbing ||
+            _loadFailed) {
+          return;
+        }
+        final box = context.findRenderObject()! as RenderBox;
+        final scale = _devicePixelRatio ?? 1;
+        _textInput.open(
+          id: event['id'] as int,
+          multiline: event['multiline'] == true,
+          obscureText: event['inputType'] == 'Password',
+          show: event['show'] == true,
+          rect: Rect.fromLTWH(
+            (event['x'] as num) / scale,
+            (event['y'] as num) / scale,
+            (event['width'] as num) / scale,
+            (event['height'] as num) / scale,
+          ),
+          size: box.size,
+          transform: box.getTransformTo(null),
+        );
+    }
+  }
+
+  Future<void> _showPageMenu(Map<String, dynamic> event) async {
+    final id = event['id'] as int;
+    if (!widget.enableContextMenu ||
+        !widget.enableInputPlumbing ||
+        _loadFailed ||
+        (event['items'] as List).isEmpty) {
+      await _respondToControl({'type': 'contextMenu', 'id': id, 'index': null});
+      return;
+    }
+    _hideMenu();
+    _menuId = id;
+    final surface = context.findRenderObject()! as RenderBox;
+    final scale = _devicePixelRatio ?? 1;
+    final globalPosition = surface.localToGlobal(
+      Offset((event['x'] as num) / scale, (event['y'] as num) / scale),
+    );
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
-    final key = await showMenu<String>(
+    final index = await showMenu<int>(
       context: context,
       requestFocus: false,
       position: RelativeRect.fromRect(
         Rect.fromLTWH(position.dx, position.dy, 0, 0),
         Offset.zero & overlay.size,
       ),
-      items: const [
-        PopupMenuItem(value: 'a', child: Text('Select All')),
-        PopupMenuItem(value: 'c', child: Text('Copy')),
-        PopupMenuItem(value: 'x', child: Text('Cut')),
-        PopupMenuItem(value: 'v', child: Text('Paste')),
+      items: [
+        for (final item in event['items'] as List)
+          if (item['separator'] == true)
+            const PopupMenuDivider()
+          else
+            PopupMenuItem<int>(
+              value: item['index'] as int,
+              enabled: item['enabled'] == true,
+              child: Builder(
+                builder: (context) {
+                  _menuRoute = ModalRoute.of(context) as PopupRoute<int>;
+                  return Text(item['label'] as String);
+                },
+              ),
+            ),
       ],
     );
-    if (!mounted || _loadFailed || key == null) return;
-    _focusNode.requestFocus();
-    await _sendFocusState(true);
-    try {
-      await _channel.invokeMethod<void>('notifyKeyEvent', [
-        'Control',
-        '',
-        true,
-      ]);
-      await _channel.invokeMethod<void>('notifyKeyEvent', [key, key, true]);
-    } finally {
-      await _channel.invokeMethod<void>('notifyKeyEvent', [key, '', false]);
-      await _channel.invokeMethod<void>('notifyKeyEvent', [
-        'Control',
-        '',
-        false,
-      ]);
-    }
+    if (!mounted || _menuId != id) return;
+    _menuRoute = null;
+    _menuId = null;
+    await _respondToControl({'type': 'contextMenu', 'id': id, 'index': index});
   }
 
   @override
@@ -163,6 +235,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   @override
   void dispose() {
+    _hideMenu();
+    _textInput.close();
     _loadTimeoutTimer?.cancel();
     _deferredRefreshTimer?.cancel();
     _resizeSyncTimer?.cancel();
@@ -177,6 +251,14 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   static Future<void> _handlePlatformMethodCall(MethodCall call) async {
+    if (call.method == 'embedderControl') {
+      final event =
+          jsonDecode(call.arguments as String) as Map<String, dynamic>;
+      for (final listener in _loadStateListeners.toList()) {
+        if (listener.mounted) listener._handleControl(event);
+      }
+      return;
+    }
     if (call.method == 'navigationStateChanged') {
       final arguments = call.arguments;
       if (arguments is! List ||
@@ -269,6 +351,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   void _reportError(PlatformException error) {
     if (_loadFailed) return;
     _loadFailed = true;
+    _textInput.close();
+    _hideMenu();
     _focusNode.unfocus();
     _pendingMousePosition = null;
     _pendingWheelPosition = null;
@@ -286,9 +370,14 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   @override
   void didUpdateWidget(covariant FlutterServoSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.enableInputPlumbing && !widget.enableInputPlumbing) {
+      _textInput.close();
+      _focusNode.unfocus();
+    }
     if (oldWidget.content != widget.content ||
         oldWidget.contentType != widget.contentType ||
         oldWidget.reloadRevision != widget.reloadRevision) {
+      _textInput.close();
       final retryingFailure = _loadFailed;
       _loadFailed = false;
       _loadTimeoutTimer?.cancel();
@@ -355,6 +444,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   Future<void> _sendFocusState(bool focused) {
+    if (!focused) _textInput.close();
     if (!widget.enableInputPlumbing) {
       return Future<void>.value();
     }
@@ -670,6 +760,25 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           focusNode: _focusNode,
           onFocusChange: (focused) => unawaited(_sendFocusState(focused)),
           onKeyEvent: (node, event) {
+            if (event is KeyUpEvent && _imeKeys.remove(event.physicalKey)) {
+              return KeyEventResult.ignored;
+            }
+            // Let the engine's text input plugin process text and IME preedit.
+            // Navigation and shortcuts continue through Servo's keyboard path.
+            final modified =
+                HardwareKeyboard.instance.isControlPressed ||
+                HardwareKeyboard.instance.isMetaPressed ||
+                HardwareKeyboard.instance.isAltPressed;
+            if (_textInput.attached &&
+                !modified &&
+                (_textInput.composing ||
+                    event.character?.isNotEmpty == true ||
+                    event.logicalKey.keyLabel.runes.length == 1 ||
+                    event.logicalKey == LogicalKeyboardKey.compose ||
+                    event.logicalKey == LogicalKeyboardKey.space)) {
+              if (event is! KeyUpEvent) _imeKeys.add(event.physicalKey);
+              return KeyEventResult.ignored;
+            }
             unawaited(_sendKeyEvent(event));
             return KeyEventResult.handled;
           },
@@ -679,12 +788,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             child: Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: (event) {
-                if (widget.enableContextMenu &&
-                    event.buttons == kSecondaryMouseButton) {
-                  _contextMenuPointer = event.pointer;
-                  unawaited(_showEditingMenu(event.position));
-                  return;
-                }
                 _focusNode.requestFocus();
                 unawaited(_sendFocusState(true));
                 _activeMouseButton = _mapMouseButtonsToServoButton(
@@ -700,10 +803,6 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
               },
               onPointerMove: (event) => _queueMouseMove(event.localPosition),
               onPointerUp: (event) {
-                if (_contextMenuPointer == event.pointer) {
-                  _contextMenuPointer = null;
-                  return;
-                }
                 unawaited(
                   _sendMouseButton(
                     event.localPosition,

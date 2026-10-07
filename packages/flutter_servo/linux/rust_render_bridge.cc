@@ -73,6 +73,9 @@ gchar* resolve_library_path() {
 
 struct _RustRenderBridge {
   void* handle;
+  char* (*take_control_event)(void*);
+  void (*control_event_free)(char*);
+  bool (*control_response)(void*, const char*);
   int (*session_wake_fd)(void*);
   FlutterServoSessionNewFn session_new;
   FlutterServoSessionFreeFn session_free;
@@ -249,7 +252,31 @@ RustRenderBridge* rust_render_bridge_new() {
       symbol_handle, "flutter_servo_session_render_frame");
   self->frame_free = resolve_symbol<FlutterServoFrameFreeFn>(
       symbol_handle, "flutter_servo_frame_free");
+  self->take_control_event = resolve_symbol<char* (*)(void*)>(
+      symbol_handle, "flutter_servo_session_take_control_event");
+  self->control_event_free = resolve_symbol<void (*)(char*)>(
+      symbol_handle, "flutter_servo_control_event_free");
+  self->control_response = resolve_symbol<bool (*)(void*, const char*)>(
+      symbol_handle, "flutter_servo_session_control_response");
   return self;
+}
+
+gchar* rust_render_bridge_take_control_event(RustRenderBridge* self,
+                                            RustRenderSessionHandle session) {
+  if (!self || !session || !self->take_control_event || !self->control_event_free) {
+    return nullptr;
+  }
+  char* event = self->take_control_event(session);
+  gchar* copy = g_strdup(event);
+  if (event) self->control_event_free(event);
+  return copy;
+}
+
+bool rust_render_bridge_control_response(RustRenderBridge* self,
+                                         RustRenderSessionHandle session,
+                                         const char* response) {
+  return self && session && self->control_response &&
+         self->control_response(session, response);
 }
 
 int rust_render_bridge_wake_fd(RustRenderBridge* self,

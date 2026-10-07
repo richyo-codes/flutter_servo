@@ -108,5 +108,11 @@ GBytes* rust_render_bridge_render_frame(RustRenderBridge* self,
                                         uint32_t height);
 
 bool rust_render_bridge_supports_owned_frames(RustRenderBridge* self);
+// Returns a GLib-owned copy of one queued control event, or null.
+gchar* rust_render_bridge_take_control_event(RustRenderBridge* self,
+                                            RustRenderSessionHandle session);
+bool rust_render_bridge_control_response(RustRenderBridge* self,
+                                         RustRenderSessionHandle session,
+                                         const char* response);
 
 #endif  // FLUTTER_SERVO_RUST_RENDER_BRIDGE_H_
