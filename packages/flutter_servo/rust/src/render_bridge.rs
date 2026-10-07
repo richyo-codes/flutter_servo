@@ -154,7 +154,7 @@ mod imp {
     }
 
     pub(super) struct ServoRenderSession {
-        rendering_context: Option<Rc<SoftwareRenderingContext>>,
+        rendering_context: Option<Rc<dyn RenderingContext>>,
         servo: Option<Servo>,
         delegate: Rc<SessionDelegate>,
         webview: Option<WebView>,
@@ -172,11 +172,25 @@ mod imp {
         fn new(proxy_overrides: ProxyOverrides) -> Result<Self, String> {
             eprintln!("flutter_servo: rust session new start");
             let size = PhysicalSize::new(800, 600);
-            eprintln!("flutter_servo: rust session creating software rendering context");
-            let rendering_context = Rc::new(
-                SoftwareRenderingContext::new(size)
-                    .map_err(|error| format!("software rendering init failed: {error:?}"))?,
-            );
+            eprintln!("flutter_servo: rust session creating rendering context");
+            let rendering_context: Rc<dyn RenderingContext> =
+                if std::env::var("FLUTTER_SERVO_GPU_TEXTURES").as_deref() == Ok("1") {
+                    match crate::gpu_context::GpuContext::new(size) {
+                        Ok(context) => Rc::new(context),
+                        Err(error) => {
+                            eprintln!("flutter_servo: hardware context unavailable: {error:?}");
+                            Rc::new(
+                                SoftwareRenderingContext::new(size)
+                                    .map_err(|error| format!("rendering init failed: {error:?}"))?,
+                            )
+                        }
+                    }
+                } else {
+                    Rc::new(
+                        SoftwareRenderingContext::new(size)
+                            .map_err(|error| format!("rendering init failed: {error:?}"))?,
+                    )
+                };
             eprintln!("flutter_servo: rust session making rendering context current");
             rendering_context
                 .make_current()
@@ -444,26 +458,40 @@ mod imp {
             }
         }
 
-        fn render_image(&mut self, width: u32, height: u32) -> Option<RgbaImage> {
+        fn paint(&mut self, width: u32, height: u32) -> bool {
             let width = width.max(1);
             let height = height.max(1);
 
             if !self.prepare_for_render(width, height) {
                 eprintln!("flutter_servo: rust render prepare failed");
-                return None;
+                return false;
             }
 
             if let Some(servo) = self.servo.as_ref() {
                 servo.spin_event_loop();
             } else {
                 eprintln!("flutter_servo: rust render missing Servo event loop");
-                return None;
+                return false;
             }
 
             if let Some(webview) = self.webview.as_ref() {
                 webview.paint();
             } else {
                 eprintln!("flutter_servo: rust render missing webview");
+                return false;
+            }
+
+            if let Some(context) = self.rendering_context.as_ref() {
+                context.prepare_for_rendering();
+            }
+            self.rendered_frame_epoch = self.delegate.frame_epoch.get();
+            true
+        }
+
+        fn render_image(&mut self, width: u32, height: u32) -> Option<RgbaImage> {
+            let width = width.max(1);
+            let height = height.max(1);
+            if !self.paint(width, height) {
                 return None;
             }
 
@@ -879,6 +907,18 @@ mod imp {
             KeyState::Up
         };
         session.send_keyboard_event(key_label, character, key_state)
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_paint(
+        session: *mut c_void,
+        width: u32,
+        height: u32,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
+            return false;
+        };
+        catch_unwind(AssertUnwindSafe(|| session.paint(width, height))).unwrap_or(false)
     }
 
     #[no_mangle]

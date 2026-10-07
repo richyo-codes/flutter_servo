@@ -108,6 +108,9 @@ GBytes* rust_render_bridge_render_frame(RustRenderBridge* self,
                                         uint32_t height);
 
 bool rust_render_bridge_supports_owned_frames(RustRenderBridge* self);
+bool rust_render_bridge_paint(RustRenderBridge* self, RustRenderSessionHandle session,
+                              uint32_t width, uint32_t height);
+
 // Returns a GLib-owned copy of one queued control event, or null.
 gchar* rust_render_bridge_take_control_event(RustRenderBridge* self,
                                             RustRenderSessionHandle session);

@@ -4634,11 +4634,16 @@ name = "rust_lib_flutter_servo"
 version = "0.1.0"
 dependencies = [
  "dpi",
+ "euclid",
  "flutter_rust_bridge",
+ "gleam",
+ "glow",
  "keyboard-types",
  "percent-encoding",
+ "serde_json",
  "servo",
  "servo-allocator",
+ "surfman",
  "url",
 ]
 

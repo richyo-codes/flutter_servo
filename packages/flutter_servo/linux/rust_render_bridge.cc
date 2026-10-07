@@ -73,6 +73,7 @@ gchar* resolve_library_path() {
 
 struct _RustRenderBridge {
   void* handle;
+  bool (*paint)(void*, uint32_t, uint32_t);
   char* (*take_control_event)(void*);
   void (*control_event_free)(char*);
   bool (*control_response)(void*, const char*);
@@ -258,7 +259,14 @@ RustRenderBridge* rust_render_bridge_new() {
       symbol_handle, "flutter_servo_control_event_free");
   self->control_response = resolve_symbol<bool (*)(void*, const char*)>(
       symbol_handle, "flutter_servo_session_control_response");
+  self->paint = resolve_symbol<bool (*)(void*, uint32_t, uint32_t)>(
+      symbol_handle, "flutter_servo_session_paint");
   return self;
+}
+
+bool rust_render_bridge_paint(RustRenderBridge* self, RustRenderSessionHandle session,
+                              uint32_t width, uint32_t height) {
+  return self && session && self->paint && self->paint(session, width, height);
 }
 
 gchar* rust_render_bridge_take_control_event(RustRenderBridge* self,

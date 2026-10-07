@@ -13,12 +13,14 @@ set(PLUGIN_NAME "flutter_servo_plugin")
 
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(epoxy REQUIRED IMPORTED_TARGET epoxy)
+pkg_check_modules(gbm REQUIRED IMPORTED_TARGET gbm)
 
 # Any new source files that you add to the plugin should be added here.
 list(APPEND PLUGIN_SOURCES
   "flutter_servo_plugin.cc"
   "rust_render_bridge.cc"
   "servo_texture.cc"
+  "shared_frame.cc"
 )
 
 # Define the plugin library target. Its name must not be changed (see comment
@@ -48,6 +50,7 @@ target_include_directories(${PLUGIN_NAME} PRIVATE "${epoxy_INCLUDE_DIRS}")
 target_link_libraries(${PLUGIN_NAME} PRIVATE flutter)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::GTK)
 target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::epoxy)
+target_link_libraries(${PLUGIN_NAME} PRIVATE PkgConfig::gbm)
 target_link_libraries(${PLUGIN_NAME} PRIVATE dl)
 
 # List of absolute paths to libraries that should be bundled with the plugin.

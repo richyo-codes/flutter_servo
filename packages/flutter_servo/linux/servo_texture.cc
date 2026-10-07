@@ -1,4 +1,5 @@
 #include "servo_texture.h"
+#include "shared_frame.h"
 
 #include <algorithm>
 #include <cstdint>
@@ -21,6 +22,9 @@ struct _ServoTexture {
   GLuint texture_id;
   uint32_t texture_width;
   uint32_t texture_height;
+  EGLDisplay consumer_display;
+  ServoSharedFrame* shared_frame;
+  bool shared_enabled;
 };
 
 G_DEFINE_TYPE(ServoTexture, servo_texture, fl_texture_gl_get_type())
@@ -70,6 +74,7 @@ static void servo_texture_finalize(GObject* object) {
   ServoTexture* self = SERVO_TEXTURE(object);
   {
     const ScopedMutexLock lock(&self->buffer_mutex);
+    servo_shared_frame_free(self->shared_frame);
     g_free(self->front_buffer);
     g_free(self->back_buffer);
     g_clear_pointer(&self->published_bytes, g_bytes_unref);
@@ -90,6 +95,7 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
   (void)error;
   ServoTexture* self = SERVO_TEXTURE(texture);
   const ScopedMutexLock lock(&self->buffer_mutex);
+  self->consumer_display = eglGetCurrentDisplay();
   if (self->front_buffer == nullptr) {
     return FALSE;
   }
@@ -122,12 +128,19 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
   if (self->texture_width != self->front_width ||
       self->texture_height != self->front_height) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->front_width, self->front_height, 0,
-                 GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+                 GL_RGBA, GL_UNSIGNED_BYTE, self->shared_frame ? nullptr : pixels);
     self->texture_width = self->front_width;
     self->texture_height = self->front_height;
-  } else if (self->upload_pending) {
+  } else if (self->upload_pending && !self->shared_frame) {
     glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, self->front_width, self->front_height, GL_RGBA,
                     GL_UNSIGNED_BYTE, pixels);
+  }
+  if (self->shared_frame && self->upload_pending) {
+    if (!servo_shared_frame_copy(self->shared_frame, self->texture_id)) {
+      g_warning("flutter_servo: shared GPU frame import failed; disabling GPU transfer");
+      self->shared_enabled = false;
+      return FALSE;
+    }
   }
   self->upload_pending = false;
   glBindTexture(GL_TEXTURE_2D, 0);
@@ -155,6 +168,38 @@ static void servo_texture_init(ServoTexture* self) {
   self->texture_id = 0;
   self->texture_width = 0;
   self->texture_height = 0;
+  self->consumer_display = EGL_NO_DISPLAY;
+  self->shared_frame = nullptr;
+  self->shared_enabled = g_strcmp0(g_getenv("FLUTTER_SERVO_GPU_TEXTURES"), "1") == 0;
+}
+
+bool servo_texture_wants_shared_frame(ServoTexture* self) {
+  const ScopedMutexLock lock(&self->buffer_mutex);
+  return self->shared_enabled && self->consumer_display != EGL_NO_DISPLAY;
+}
+
+bool servo_texture_publish_current_frame(ServoTexture* self) {
+  const ScopedMutexLock lock(&self->buffer_mutex);
+  auto* frame = servo_shared_frame_capture(self->consumer_display, self->width, self->height);
+  if (!frame) {
+    self->shared_enabled = false;
+    g_warning("flutter_servo: GPU export unavailable; using CPU frame transfer");
+    return false;
+  }
+  if (!self->shared_frame) g_message("flutter_servo: using shared EGL/DMA-BUF frames");
+  servo_shared_frame_free(self->shared_frame);
+  self->shared_frame = frame;
+  g_clear_pointer(&self->published_bytes, g_bytes_unref);
+  self->front_width = self->width;
+  self->front_height = self->height;
+  self->upload_pending = true;
+  return true;
+}
+
+void servo_texture_clear_shared_frame(ServoTexture* self) {
+  const ScopedMutexLock lock(&self->buffer_mutex);
+  servo_shared_frame_free(self->shared_frame);
+  self->shared_frame = nullptr;
 }
 
 ServoTexture* servo_texture_new(uint32_t width,
@@ -208,6 +253,8 @@ void servo_texture_publish_frame(ServoTexture* self) {
   g_return_if_fail(SERVO_IS_TEXTURE(self));
 
   const ScopedMutexLock lock(&self->buffer_mutex);
+  servo_shared_frame_free(self->shared_frame);
+  self->shared_frame = nullptr;
   g_clear_pointer(&self->published_bytes, g_bytes_unref);
   std::swap(self->front_buffer, self->back_buffer);
   self->front_width = self->width;
@@ -232,6 +279,8 @@ bool servo_texture_publish_bytes(ServoTexture* self,
   }
 
   const ScopedMutexLock lock(&self->buffer_mutex);
+  servo_shared_frame_free(self->shared_frame);
+  self->shared_frame = nullptr;
   g_clear_pointer(&self->published_bytes, g_bytes_unref);
   self->published_bytes = frame;
   self->front_width = width;

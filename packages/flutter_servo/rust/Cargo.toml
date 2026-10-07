@@ -15,11 +15,20 @@ servo-engine = [
     "dep:servo",
     "dep:servo-allocator",
     "dep:url",
+    "dep:surfman",
+    "dep:gleam",
+    "dep:glow",
+    "dep:euclid",
 ]
 
 [dependencies]
 flutter_rust_bridge = "=2.13.0"
 keyboard-types = "0.8.3"
+serde_json = "1"
+surfman = { version = "0.13.0", features = ["chains"], optional = true }
+gleam = { version = "0.15", optional = true }
+glow = { version = "0.17", optional = true }
+euclid = { version = "0.22", optional = true }
 dpi = { version = "0.1", optional = true }
 percent-encoding = { version = "2.3", optional = true }
 servo = { git = "https://github.com/servo/servo", tag = "v0.6.0", default-features = false, features = ["baked-in-resources", "js_jit", "clipboard"], optional = true }

@@ -183,7 +183,11 @@ static bool render_texture(FlutterServoPlugin* self) {
   if (ensure_session(self)) {
     const uint32_t width = servo_texture_get_width(self->texture);
     const uint32_t height = servo_texture_get_height(self->texture);
-    if (rust_render_bridge_supports_owned_frames(self->rust_render_bridge)) {
+    if (servo_texture_wants_shared_frame(self->texture) &&
+        rust_render_bridge_paint(self->rust_render_bridge, self->session, width, height)) {
+      rendered = servo_texture_publish_current_frame(self->texture);
+    }
+    if (!rendered && rust_render_bridge_supports_owned_frames(self->rust_render_bridge)) {
       GBytes* frame = rust_render_bridge_render_frame(
           self->rust_render_bridge, self->session, width, height);
       if (frame != nullptr) {
@@ -192,7 +196,7 @@ static bool render_texture(FlutterServoPlugin* self) {
           g_bytes_unref(frame);
         }
       }
-    } else {
+    } else if (!rendered) {
       rendered = rust_render_bridge_render_session(
           self->rust_render_bridge, self->session, width, height,
           servo_texture_get_buffer(self->texture),
@@ -701,6 +705,7 @@ static void flutter_servo_plugin_dispose(GObject* object) {
     g_source_remove(self->frame_source_id);
     self->frame_source_id = 0;
   }
+  if (self->texture) servo_texture_clear_shared_frame(self->texture);
   rust_render_bridge_destroy_session(self->rust_render_bridge, self->session);
   self->session = nullptr;
   if (self->texture != nullptr && self->texture_registrar != nullptr) {

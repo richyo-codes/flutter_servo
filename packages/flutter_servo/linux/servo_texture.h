@@ -27,6 +27,9 @@ uint8_t* servo_texture_get_buffer(ServoTexture* self);
 size_t servo_texture_get_buffer_size(ServoTexture* self);
 
 void servo_texture_publish_frame(ServoTexture* self);
+bool servo_texture_wants_shared_frame(ServoTexture* self);
+bool servo_texture_publish_current_frame(ServoTexture* self);
+void servo_texture_clear_shared_frame(ServoTexture* self);
 
 // Takes ownership of an immutable RGBA frame.
 bool servo_texture_publish_bytes(ServoTexture* self,
