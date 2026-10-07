@@ -15,9 +15,28 @@ updates. Rust and its Native Assets hook are contained in this package; Servo
 v0.6.0 and the public Surfman fix are pinned in `rust/Cargo.toml`/`Cargo.lock`.
 No sibling Rust crate or local Servo/Surfman checkout is required.
 
-The browser offers a basic editing context menu, modifier-aware keyboard
-selection, repeat events, and Servo's system clipboard support. Full IME
-composition and page-specific DOM context menus are not implemented yet.
+The browser offers Servo-provided page context menus, modifier-aware keyboard
+selection, repeat events, and Servo's system clipboard support. Flutter text
+input forwards IME preedit and Unicode commits; surrounding-text editing,
+reconversion, and autofill are not yet supported. Native IME candidate-window
+behavior still needs interactive validation.
+
+Browser shortcuts work while the webpage has focus:
+
+- Ctrl+L, Ctrl+K, Alt+D, or F6 focuses and selects the address bar.
+- Ctrl+R or F5 reloads the page.
+- Alt+Left/Right navigates back/forward.
+- Ctrl+D toggles the current page's bookmark.
+
+Loading keeps the previous real frame visible. On startup, a simple loading
+surface remains until the first native frame arrives, rather than displaying
+a synthetic webpage skeleton.
+
+An experimental `FLUTTER_SERVO_GPU_TEXTURES=1` path shares EGL images, using
+linear GBM DMA-BUFs across displays, with CPU transfer as fallback. Linux builds
+require the GBM development package. This path still copies on the GPU and uses
+blocking synchronization; it is not zero-copy. Standalone GPU probes pass, but
+the tested GTK4 application selects llvmpipe and falls back to CPU transfer.
 
 ## Development
 
