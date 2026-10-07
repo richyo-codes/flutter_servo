@@ -30,57 +30,6 @@ mod imp {
 
     use super::{c_char, c_string, c_void, slice, BYTES_PER_PIXEL};
 
-    const DEFAULT_HTML: &str = r#"<!DOCTYPE html>
-<html>
-  <head>
-    <meta charset="utf-8">
-    <style>
-      :root {
-        color-scheme: light;
-        font-family: sans-serif;
-      }
-
-      body {
-        margin: 0;
-        padding: 32px;
-        background: linear-gradient(180deg, #f6f8f4 0%, #ecefe7 100%);
-        color: #1f2a1d;
-      }
-
-      main {
-        max-width: 720px;
-      }
-
-      h1 {
-        margin: 0 0 12px;
-        font-size: 36px;
-      }
-
-      p {
-        margin: 0 0 16px;
-        line-height: 1.5;
-      }
-
-      input {
-        width: min(420px, 100%);
-        padding: 12px 14px;
-        border: 1px solid #b8c1b0;
-        border-radius: 10px;
-        font: inherit;
-      }
-    </style>
-  </head>
-  <body>
-    <main>
-      <h1>Hello from Servo</h1>
-      <p>Real Servo content rendered inside Flutter on Linux.</p>
-      <p>Select this text once input and pointer forwarding land.</p>
-      <input value="Servo form control placeholder" />
-    </main>
-  </body>
-</html>
-"#;
-
     #[derive(Clone)]
     enum SessionContent {
         Url(Url),
@@ -260,22 +209,17 @@ mod imp {
                 }))
                 .build();
 
-            eprintln!("flutter_servo: rust session creating WebView");
             let delegate = Rc::new(SessionDelegate::default());
-            delegate.begin_navigation();
-            let webview = WebViewBuilder::new(&servo, rendering_context.clone())
-                .delegate(delegate.clone())
-                .url(data_url_for_html(DEFAULT_HTML)?)
-                .build();
-            eprintln!("flutter_servo: rust session created WebView");
 
             Ok(Self {
                 rendering_context: Some(rendering_context),
                 servo: Some(servo),
                 delegate,
-                webview: Some(webview),
-                content: SessionContent::Html(DEFAULT_HTML.to_owned()),
-                pending_navigation: false,
+                // Build the first WebView with the requested content. Starting a demo
+                // navigation here races the first host navigation before Servo spins.
+                webview: None,
+                content: SessionContent::Url(Url::parse("about:blank").unwrap()),
+                pending_navigation: true,
                 size,
                 rendered_frame_epoch: 0,
                 wake_pending,
@@ -592,8 +536,7 @@ mod imp {
                 if let Some(webview) = self.webview.as_ref() {
                     webview.resize(requested_size);
                 } else {
-                    eprintln!("flutter_servo: rust render missing webview for resize");
-                    return false;
+                    rendering_context.resize(requested_size);
                 }
                 self.delegate.mark_frame_dirty();
                 self.size = requested_size;
@@ -605,7 +548,7 @@ mod imp {
                     return false;
                 };
                 eprintln!("flutter_servo: rust render loading pending content");
-                if self.delegate.crashed.get() {
+                if self.webview.is_none() || self.delegate.crashed.get() {
                     let Some(servo) = self.servo.as_ref() else {
                         return false;
                     };
