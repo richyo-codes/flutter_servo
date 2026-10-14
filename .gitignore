@@ -15,3 +15,5 @@ target/
 *.swp
 .DS_Store
 .flatpak-builder/
+.fvm/
+.fvmrc

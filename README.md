@@ -31,6 +31,11 @@ that preserves adapter selection without runtime environment mutation.
 
 ## Commands
 
+GitHub Actions builds a GTK4 release browser RPM on pushes, pull requests, and
+manual runs. Download it from **Browser CI** under **Artifacts**; tagged release
+publishing and local RPM commands are described in
+[GitHub Browser Builds](docs/github-actions.md).
+
 Generate bridge bindings:
 
 ```bash
