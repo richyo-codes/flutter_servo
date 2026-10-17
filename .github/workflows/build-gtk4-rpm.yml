@@ -2,6 +2,15 @@ name: Build GTK4 Browser RPM
 
 on:
   workflow_call:
+    inputs:
+      checkout_ref:
+        description: Commit to build; defaults to the caller's ref
+        type: string
+        default: ''
+      artifact_version:
+        description: Release tag; otherwise computed from git describe
+        type: string
+        default: ''
 
 permissions:
   contents: read
@@ -23,11 +32,17 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.checkout_ref }}
 
       - name: Compute artifact version
         shell: bash
+        env:
+          REQUESTED_VERSION: ${{ inputs.artifact_version }}
         run: |
-          version="$(git describe --tags --always --dirty)"
+          version="$REQUESTED_VERSION"
+          if [[ -z "$version" ]]; then
+            version="$(git describe --tags --always --dirty)"
+          fi
           echo "ARTIFACT_VERSION=${version#v}" >> "$GITHUB_ENV"
 
       - name: Make room for the Servo release build
@@ -117,7 +132,7 @@ jobs:
             cp LICENSE "$bundle/"
           fi
           printf 'Version: %s\nApp commit: %s\nFlutter commit: %s\nEngine: %s\nRust mode: release\nGTK: 4\nLicense: %s\n' \
-            "$ARTIFACT_VERSION" "$GITHUB_SHA" "$FLUTTER_GTK4_SHA" \
+            "$ARTIFACT_VERSION" "$(git rev-parse HEAD)" "$FLUTTER_GTK4_SHA" \
             "$FLUTTER_PREBUILT_ENGINE_VERSION" "$BROWSER_LICENSE" > "$bundle/BUILD_INFO.txt"
 
       - name: Build RPM and checksums

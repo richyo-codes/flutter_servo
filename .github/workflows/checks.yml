@@ -1,0 +1,48 @@
+name: Browser Checks
+
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Commit to test; defaults to the caller's ref
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref }}
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Resolve package and example dependencies
+        shell: bash
+        run: |
+          cd packages/flutter_servo
+          flutter pub get
+          cd example
+          flutter pub get
+      - name: Analyze Flutter package and example
+        working-directory: packages/flutter_servo
+        run: flutter analyze --no-pub
+      - name: Test browser and input plumbing
+        working-directory: packages/flutter_servo/example
+        run: flutter test --no-test-assets ../test test
+      - name: Test Rust helpers
+        run: cargo test --locked --manifest-path packages/flutter_servo/rust/Cargo.toml --lib
+      - name: Install packaging test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm patchelf shellcheck libgtk-4-dev pkg-config gcc cpio
+      - name: Test RPM packaging
+        run: python3 tools/test_browser_rpm.py
+      - name: Check packaging scripts
+        run: shellcheck tools/build_browser_rpm.sh tools/install_gtk4_prebuilt_engine.sh tools/verify_gtk4_bundle.sh

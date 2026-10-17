@@ -50,7 +50,14 @@ Requires an x86_64 Linux host with `rpm`, `rpmbuild`, `patchelf`, `binutils`,
 and the bundle's system libraries. Use `--bundle-dir` and `--out-dir` to select
 other paths. The original bundle is left untouched.
 
-`v*` tags trigger **Browser Release**, which builds the same RPM. Public GitHub
+`v*` tags trigger **Browser Release**, which runs the same Flutter, Rust, and
+packaging checks as CI before building the RPM. The release workflow can also
+be run manually with an existing tag. It resolves the tag once, tests and
+builds that commit, and verifies that the tag still names that commit before
+publishing. Build provenance records the checked-out commit, including when a
+manual release targets a tag different from the workflow's branch.
+
+Public GitHub
 release publishing is enabled only when the repository variable
 `BROWSER_LICENSE` contains the chosen SPDX identifier and a real root `LICENSE`
 file exists. Until then, CI artifacts declare `LicenseRef-Unspecified`; this is

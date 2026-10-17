@@ -3,20 +3,59 @@ name: Browser Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing version tag to build and publish (for example v0.1.0)
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 concurrency:
-  group: browser-release-${{ github.ref }}
+  group: browser-release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Resolve the release tag to a fixed commit
+        id: resolve
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+            echo "Expected an existing v-prefixed semantic version tag" >&2
+            exit 1
+          fi
+          commit="$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")"
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  tests:
+    needs: validate
+    uses: ./.github/workflows/checks.yml
+    with:
+      checkout_ref: ${{ needs.validate.outputs.commit }}
+
   build:
+    needs: [validate, tests]
     uses: ./.github/workflows/build-gtk4-rpm.yml
+    with:
+      checkout_ref: ${{ needs.validate.outputs.commit }}
+      artifact_version: ${{ needs.validate.outputs.tag }}
 
   publish:
-    needs: build
+    needs: [validate, build]
     if: vars.BROWSER_LICENSE != '' && vars.BROWSER_LICENSE != 'LicenseRef-Unspecified'
     runs-on: ubuntu-24.04
     permissions:
@@ -32,12 +71,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
         run: |
-          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
-            echo "Expected a v-prefixed semantic version tag" >&2
-            exit 1
-          fi
+          test "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" = "$RELEASE_COMMIT"
           mapfile -t assets < <(find release-assets -type f \( -name '*.rpm' -o -name '*.sha256' -o -name '*.requires.txt' \))
           if (( ${#assets[@]} == 0 )); then exit 1; fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
