@@ -29,7 +29,35 @@ struct _ServoTexture {
 
 G_DEFINE_TYPE(ServoTexture, servo_texture, fl_texture_gl_get_type())
 
+static guint transfer_failed_signal;
+
+static gboolean notify_transfer_failed(gpointer data) {
+  g_signal_emit(data, transfer_failed_signal, 0);
+  return G_SOURCE_REMOVE;
+}
+
 namespace {
+
+class ScopedUploadState {
+ public:
+  ScopedUploadState() {
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture_);
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &buffer_);
+    for (int i = 0; i < 4; i++) glGetIntegerv(fields_[i], &values_[i]);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    for (int i = 1; i < 4; i++) glPixelStorei(fields_[i], 0);
+  }
+  ~ScopedUploadState() {
+    for (int i = 0; i < 4; i++) glPixelStorei(fields_[i], values_[i]);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, buffer_);
+    glBindTexture(GL_TEXTURE_2D, texture_);
+  }
+ private:
+  const GLenum fields_[4] = {GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH,
+                            GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_PIXELS};
+  GLint values_[4] = {}, texture_ = 0, buffer_ = 0;
+};
 
 class ScopedMutexLock {
  public:
@@ -110,6 +138,7 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
     }
   }
 
+  const ScopedUploadState upload_state;
   if (self->texture_id == 0) {
     glGenTextures(1, &self->texture_id);
     if (self->texture_id == 0) {
@@ -124,7 +153,6 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
     glBindTexture(GL_TEXTURE_2D, self->texture_id);
   }
 
-  glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
   if (self->texture_width != self->front_width ||
       self->texture_height != self->front_height) {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, self->front_width, self->front_height, 0,
@@ -139,11 +167,16 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
     if (!servo_shared_frame_copy(self->shared_frame, self->texture_id)) {
       g_warning("flutter_servo: shared GPU frame import failed; disabling GPU transfer");
       self->shared_enabled = false;
+      servo_shared_frame_free(self->shared_frame);
+      self->shared_frame = nullptr;
+      self->upload_pending = false;
+      // Raster-thread failure must wake the producer even for an idle page.
+      g_idle_add_full(G_PRIORITY_DEFAULT, notify_transfer_failed,
+                      g_object_ref(self), g_object_unref);
       return FALSE;
     }
   }
   self->upload_pending = false;
-  glBindTexture(GL_TEXTURE_2D, 0);
 
   *target = GL_TEXTURE_2D;
   *name = self->texture_id;
@@ -153,6 +186,9 @@ static gboolean servo_texture_populate(FlTextureGL* texture,
 }
 
 static void servo_texture_class_init(ServoTextureClass* klass) {
+  transfer_failed_signal = g_signal_new(
+      "transfer-failed", G_TYPE_FROM_CLASS(klass), G_SIGNAL_RUN_LAST,
+      0, nullptr, nullptr, nullptr, G_TYPE_NONE, 0);
   G_OBJECT_CLASS(klass)->dispose = servo_texture_dispose;
   G_OBJECT_CLASS(klass)->finalize = servo_texture_finalize;
   FL_TEXTURE_GL_CLASS(klass)->populate = servo_texture_populate;

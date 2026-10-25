@@ -5,6 +5,39 @@
 
 static unsigned uploads = 0;
 static unsigned released_frames = 0;
+static GLint gl_state[6] = {73, 91, 8, 100, 2, 3};
+static const GLenum state_fields[] = {GL_TEXTURE_BINDING_2D,
+    GL_PIXEL_UNPACK_BUFFER_BINDING, GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH,
+    GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_PIXELS};
+
+ServoSharedFrame* servo_shared_frame_capture(EGLDisplay, uint32_t, uint32_t) {
+  return nullptr;
+}
+bool servo_shared_frame_copy(ServoSharedFrame*, GLuint) { return false; }
+void servo_shared_frame_free(ServoSharedFrame* frame) { delete frame; }
+
+static void assert_upload_state() {
+  g_assert_cmpint(gl_state[1], ==, 0);
+  g_assert_cmpint(gl_state[2], ==, 1);
+  for (int i = 3; i < 6; i++) g_assert_cmpint(gl_state[i], ==, 0);
+}
+
+static void mock_gl() {
+  epoxy_glGetIntegerv = [](GLenum field, GLint* value) {
+    for (int i = 0; i < 6; i++) if (state_fields[i] == field) *value = gl_state[i];
+  };
+  epoxy_glBindBuffer = [](GLenum, GLuint value) { gl_state[1] = value; };
+  epoxy_glBindTexture = [](GLenum, GLuint value) { gl_state[0] = value; };
+  epoxy_glPixelStorei = [](GLenum field, GLint value) {
+    for (int i = 2; i < 6; i++) if (state_fields[i] == field) gl_state[i] = value;
+  };
+  epoxy_glGenTextures = [](GLsizei, GLuint* name) { *name = 1; };
+  epoxy_glTexParameteri = [](GLenum, GLenum, GLint) {};
+  epoxy_glTexImage2D = [](GLenum, GLint, GLint, GLsizei, GLsizei, GLint,
+                          GLenum, GLenum, const void*) { assert_upload_state(); uploads++; };
+  epoxy_glTexSubImage2D = [](GLenum, GLint, GLint, GLint, GLsizei, GLsizei,
+                             GLenum, GLenum, const void*) { assert_upload_state(); uploads++; };
+}
 
 static void release_test_frame(gpointer data) {
   released_frames++;
@@ -19,19 +52,15 @@ static GBytes* test_frame(uint32_t width, uint32_t height, uint8_t value) {
 }
 
 static void repeated_populate_reuses_upload() {
-  epoxy_glGenTextures = [](GLsizei, GLuint* name) { *name = 1; };
-  epoxy_glBindTexture = [](GLenum, GLuint) {};
-  epoxy_glTexParameteri = [](GLenum, GLenum, GLint) {};
-  epoxy_glPixelStorei = [](GLenum, GLint) {};
-  epoxy_glTexImage2D = [](GLenum, GLint, GLint, GLsizei, GLsizei, GLint,
-                          GLenum, GLenum, const void*) { uploads++; };
-  epoxy_glTexSubImage2D = [](GLenum, GLint, GLint, GLint, GLsizei, GLsizei,
-                             GLenum, GLenum, const void*) { uploads++; };
+  uploads = 0;
+  mock_gl();
   ServoTexture* texture = servo_texture_new(64, 64, "test");
   uint32_t target, name, width, height;
   auto populate = [&]() {
     g_assert_true(servo_texture_populate(FL_TEXTURE_GL(texture), &target,
                                          &name, &width, &height, nullptr));
+    const GLint expected[] = {73, 91, 8, 100, 2, 3};
+    for (int i = 0; i < 6; i++) g_assert_cmpint(gl_state[i], ==, expected[i]);
   };
   populate();
   g_assert_cmpuint(uploads, ==, 1);
@@ -52,6 +81,35 @@ static void repeated_populate_reuses_upload() {
   populate();
   populate();
   g_assert_cmpuint(uploads, ==, 3);
+  g_object_unref(texture);
+}
+
+static void failed_import_requests_fallback() {
+  mock_gl();
+  ServoTexture* texture = servo_texture_new(16, 16, "test");
+  texture->shared_frame = new ServoSharedFrame{};
+  texture->shared_enabled = true;
+  unsigned notifications = 0;
+  g_signal_connect(texture, "transfer-failed", G_CALLBACK(+[](ServoTexture*, gpointer data) {
+    ++*static_cast<unsigned*>(data);
+  }), &notifications);
+  uint32_t target, name, width, height;
+  g_test_expect_message(nullptr, G_LOG_LEVEL_WARNING, "*shared GPU frame import failed*");
+  g_assert_false(servo_texture_populate(FL_TEXTURE_GL(texture), &target, &name,
+                                       &width, &height, nullptr));
+  g_test_assert_expected_messages();
+  g_assert_false(texture->shared_enabled);
+  g_assert_null(texture->shared_frame);
+  g_assert_cmpuint(notifications, ==, 0);
+  while (g_main_context_iteration(nullptr, FALSE)) {}
+  g_assert_cmpuint(notifications, ==, 1);
+  const GLint expected[] = {73, 91, 8, 100, 2, 3};
+  for (int i = 0; i < 6; i++) g_assert_cmpint(gl_state[i], ==, expected[i]);
+  servo_texture_paint_placeholder(texture, "cpu fallback");
+  g_assert_true(servo_texture_populate(FL_TEXTURE_GL(texture), &target, &name,
+                                      &width, &height, nullptr));
+  while (g_main_context_iteration(nullptr, FALSE)) {}
+  g_assert_cmpuint(notifications, ==, 1);
   g_object_unref(texture);
 }
 
@@ -108,6 +166,7 @@ static void owned_frames_live_until_replaced() {
 
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
+  g_test_add_func("/servo/texture/import-fallback", failed_import_requests_fallback);
   g_test_add_func("/servo/texture/resize-publication",
                   resize_preserves_published_frame);
   g_test_add_func("/servo/texture/upload-once", repeated_populate_reuses_upload);

@@ -48,8 +48,25 @@ int main(int argc, char** argv) {
     glClearColor(1, 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glDisable(GL_SCISSOR_TEST);
+    // An undersized upload buffer must not affect allocation-only capture.
+    GLuint unpack_buffer = 0;
+    glGenBuffers(1, &unpack_buffer);
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpack_buffer);
+    glBufferData(GL_PIXEL_UNPACK_BUFFER, 1, nullptr, GL_STATIC_DRAW);
     ServoSharedFrame* frame = servo_shared_frame_capture(consumer, width, height);
     if (!frame) { std::fprintf(stderr, "GPU export failed\n"); return 5; }
+    GLint restored_unpack = 0, restored_texture = 0, restored_framebuffer = 0;
+    glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &restored_unpack);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &restored_texture);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &restored_framebuffer);
+    if (restored_unpack != static_cast<GLint>(unpack_buffer) ||
+        restored_texture != static_cast<GLint>(source) ||
+        restored_framebuffer != static_cast<GLint>(framebuffer) ||
+        glGetError() != GL_NO_ERROR) {
+      std::fprintf(stderr, "GPU capture changed producer GL state\n"); return 9;
+    }
+    glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
+    glDeleteBuffers(1, &unpack_buffer);
     // The snapshot must survive both source mutation and source destruction.
     glClearColor(0, 1, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
@@ -60,7 +77,25 @@ int main(int argc, char** argv) {
     glGenTextures(1, &destination);
     glBindTexture(GL_TEXTURE_2D, destination);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    GLuint sentinel_framebuffers[2] = {};
+    glGenFramebuffers(2, sentinel_framebuffers);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, sentinel_framebuffers[0]);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, sentinel_framebuffers[1]);
+    glEnable(GL_SCISSOR_TEST);
+    glScissor(0, 0, 1, 1);
     if (!servo_shared_frame_copy(frame, destination)) return 7;
+    GLint restored_read = 0, restored_draw = 0;
+    glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &restored_read);
+    glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &restored_draw);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D, &restored_texture);
+    if (restored_read != static_cast<GLint>(sentinel_framebuffers[0]) ||
+        restored_draw != static_cast<GLint>(sentinel_framebuffers[1]) ||
+        restored_texture != static_cast<GLint>(destination) ||
+        !glIsEnabled(GL_SCISSOR_TEST) || glGetError() != GL_NO_ERROR) {
+      std::fprintf(stderr, "GPU copy changed consumer GL state\n"); return 10;
+    }
+    glDisable(GL_SCISSOR_TEST);
+    glDeleteFramebuffers(2, sentinel_framebuffers);
     servo_shared_frame_free(frame);
     glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
@@ -81,6 +116,6 @@ int main(int argc, char** argv) {
   eglDestroyContext(producer, producer_context);
   if (cross_display) eglTerminate(consumer);
   eglTerminate(producer);
-  std::printf("GPU sharing passed: %s, 12 frames, resize, orientation, immutable storage\n",
+  std::printf("GPU sharing passed: %s, 12 frames, resize, orientation, immutable storage, GL state\n",
       cross_display ? "cross-display DMA-BUF" : "same-display EGLImage");
 }

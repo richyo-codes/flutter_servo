@@ -82,6 +82,49 @@ void main() {
     },
   );
 
+  testWidgets('accepts retained frame notification while reattaching', (
+    tester,
+  ) async {
+    var creations = 0;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          if (call.method == 'createTexture') {
+            creations++;
+            // Native reattachment can replay readiness before create returns.
+            if (creations > 1) {
+              await TestDefaultBinaryMessengerBinding
+                  .instance
+                  .defaultBinaryMessenger
+                  .handlePlatformMessage(
+                    channel.name,
+                    const StandardMethodCodec().encodeMethodCall(
+                      const MethodCall('frameAvailable'),
+                    ),
+                    (_) {},
+                  );
+            }
+            return 1;
+          }
+          return true;
+        });
+    const surface = MaterialApp(
+      home: FlutterServoSurface.html(
+        content: '',
+        fallback: Text('Opening page'),
+      ),
+    );
+    await tester.pumpWidget(surface);
+    await tester.pump();
+    expect(find.text('Opening page'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpWidget(surface);
+    await tester.pump();
+    expect(creations, 2);
+    expect(find.byType(Texture), findsOneWidget);
+    expect(find.text('Opening page'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final crash in [true, false]) {
     testWidgets(
       crash

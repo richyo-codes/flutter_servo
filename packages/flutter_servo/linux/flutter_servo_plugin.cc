@@ -39,6 +39,11 @@ static constexpr int kFailedLoadProgress = 3;
 static bool render_texture(FlutterServoPlugin* self);
 static void update_load_progress(FlutterServoPlugin* self);
 
+static void send_frame_available(FlutterServoPlugin* self) {
+  fl_method_channel_invoke_method(self->method_channel, "frameAvailable",
+                                  nullptr, nullptr, nullptr, nullptr);
+}
+
 static void dispatch_control_events(FlutterServoPlugin* self) {
   for (int i = 0; i < 64; i++) {
     g_autofree gchar* event = rust_render_bridge_take_control_event(
@@ -214,8 +219,7 @@ static bool render_texture(FlutterServoPlugin* self) {
   if (rendered) {
     if (!self->has_frame) {
       self->has_frame = true;
-      fl_method_channel_invoke_method(self->method_channel, "frameAvailable",
-                                      nullptr, nullptr, nullptr, nullptr);
+      send_frame_available(self);
     }
     send_navigation_state_changed(self);
   }
@@ -438,6 +442,12 @@ static FlMethodResponse* handle_blur_webview(FlutterServoPlugin* self) {
   return FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
 }
 
+static void texture_transfer_failed(ServoTexture* texture, FlutterServoPlugin* self) {
+  if (self->texture == texture && self->session != nullptr) {
+    render_texture(self);
+  }
+}
+
 static FlMethodResponse* handle_create_texture(FlutterServoPlugin* self,
                                                FlMethodCall* method_call) {
   uint32_t width = 1;
@@ -450,6 +460,9 @@ static FlMethodResponse* handle_create_texture(FlutterServoPlugin* self,
   if (self->texture == nullptr) {
     g_message("flutter_servo: linux plugin creating texture %ux%u", width, height);
     self->texture = servo_texture_new(width, height, "servo");
+    g_signal_connect_object(self->texture, "transfer-failed",
+                            G_CALLBACK(texture_transfer_failed), self,
+                            static_cast<GConnectFlags>(0));
     if (!fl_texture_registrar_register_texture(self->texture_registrar,
                                                FL_TEXTURE(self->texture))) {
       g_clear_object(&self->texture);
@@ -460,7 +473,15 @@ static FlMethodResponse* handle_create_texture(FlutterServoPlugin* self,
     g_message("flutter_servo: linux plugin resizing existing texture to %ux%u", width, height);
     servo_texture_resize(self->texture, width, height);
   }
-  publish_placeholder_texture(self, "servo");
+  if (self->has_frame) {
+    // A newly mounted Dart surface has its own readiness state. Keep the last
+    // published page visible and replay readiness rather than replacing it.
+    fl_texture_registrar_mark_texture_frame_available(self->texture_registrar,
+                                                      FL_TEXTURE(self->texture));
+    send_frame_available(self);
+  } else {
+    publish_placeholder_texture(self, "servo");
+  }
 
   g_autoptr(FlValue) id =
       fl_value_new_int(fl_texture_get_id(FL_TEXTURE(self->texture)));

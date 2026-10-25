@@ -100,8 +100,12 @@ ServoSharedFrame* servo_shared_frame_capture(EGLDisplay consumer_display,
     return capture_linear_dmabuf(producer_display, consumer_display, width, height);
   }
 
-  GLint previous_texture = 0;
+  GLint previous_texture = 0, previous_unpack_buffer = 0;
   glGetIntegerv(GL_TEXTURE_BINDING_2D, &previous_texture);
+  glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &previous_unpack_buffer);
+  // nullptr means an offset into a bound PBO, not allocation-only storage.
+  // WebRender owns the producer context, so preserve its upload-buffer state.
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, 0);
   GLuint texture = 0;
   glGenTextures(1, &texture);
   glBindTexture(GL_TEXTURE_2D, texture);
@@ -119,6 +123,7 @@ ServoSharedFrame* servo_shared_frame_capture(EGLDisplay consumer_display,
   // Completion is explicit at this first implementation boundary. Replace this
   // with native fence FD transfer once the producer/consumer path is validated.
   glFinish();
+  glBindBuffer(GL_PIXEL_UNPACK_BUFFER, previous_unpack_buffer);
   glBindTexture(GL_TEXTURE_2D, previous_texture);
   glDeleteTextures(1, &texture);
   if (image == EGL_NO_IMAGE_KHR) {
@@ -126,7 +131,6 @@ ServoSharedFrame* servo_shared_frame_capture(EGLDisplay consumer_display,
     return nullptr;
   }
 
-  if (image == EGL_NO_IMAGE_KHR) return nullptr;
   return new ServoSharedFrame{consumer_display, image, width, height};
 }
 
