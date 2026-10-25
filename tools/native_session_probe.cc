@@ -232,6 +232,19 @@ int main(int argc, char** argv) {
     }
     const std::string dismiss = "{\"type\":\"contextMenu\",\"id\":" + id + ",\"index\":null}";
     if (!respond(session, dismiss.c_str()) || respond(session, dismiss.c_str())) return 15;
+    // The controlled page must paint more than a uniform clear color.
+    bool has_content = false;
+    for (size_t offset = 4; offset < rgba.size(); offset += 4) {
+      if (!std::equal(rgba.begin(), rgba.begin() + 4, rgba.begin() + offset)) {
+        has_content = true;
+        break;
+      }
+    }
+    if (!has_content) {
+      std::cerr << "native_probe: rendered frame is blank\n";
+      return 16;
+    }
+    std::cerr << "native_probe: nonuniform page pixels verified\n";
     std::cerr << "native_probe: Unicode IME commit, link menu, and stale response rejection passed\n";
   }
 

@@ -426,17 +426,16 @@ mod imp {
                 .as_ref()
                 .map(|webview| {
                     use crate::keyboard_input::EditingShortcut;
-                    // Servoshell dispatches these as editing actions, not raw keys.
                     let input = match crate::keyboard_input::editing_shortcut(&event) {
-                        Some(EditingShortcut::Copy) => {
-                            InputEvent::EditingAction(servo::EditingActionEvent::Copy)
-                        }
-                        Some(EditingShortcut::Cut) => {
-                            InputEvent::EditingAction(servo::EditingActionEvent::Cut)
-                        }
-                        Some(EditingShortcut::Paste) => {
-                            InputEvent::EditingAction(servo::EditingActionEvent::Paste)
-                        }
+                        Some(EditingShortcut::Copy) => InputEvent::EditingAction(
+                            servo::ClipboardAction::Copy,
+                        ),
+                        Some(EditingShortcut::Cut) => InputEvent::EditingAction(
+                            servo::ClipboardAction::Cut,
+                        ),
+                        Some(EditingShortcut::Paste) => InputEvent::EditingAction(
+                            servo::ClipboardAction::Paste,
+                        ),
                         None => InputEvent::Keyboard(servo::KeyboardEvent::new(event)),
                     };
                     webview.notify_input_event(input);
@@ -447,14 +446,14 @@ mod imp {
 
         fn focus_webview(&self) {
             if let Some(webview) = self.webview.as_ref() {
-                webview.focus();
+                webview.set_focused(true);
             }
         }
 
         fn blur_webview(&self) {
             self.keyboard.borrow_mut().clear();
             if let Some(webview) = self.webview.as_ref() {
-                webview.blur();
+                webview.set_focused(false);
             }
         }
 
