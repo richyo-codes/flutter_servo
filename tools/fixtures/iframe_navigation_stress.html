@@ -1,0 +1,22 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Iframe parent lifecycle stress</title>
+<h1>Iframe navigation and removal stress</h1>
+<script>
+// Reproduces Servo 0.7's WindowProxy assertion intermittently on navigation-away.
+// Each child has an opaque origin and starts another browsing context.
+let iteration = 0;
+function churn() {
+  if (++iteration > 100) return;
+  const frame = document.createElement('iframe');
+  const child = '<iframe src="data:text/html,nested"></iframe>';
+  frame.src = 'data:text/html,' + encodeURIComponent(child);
+  document.body.append(frame);
+  setTimeout(() => {
+    frame.src = 'data:text/html,' + encodeURIComponent(child + '<p>replacement</p>');
+    setTimeout(() => frame.remove(), iteration % 7);
+  }, iteration % 5);
+  setTimeout(churn, 10);
+}
+addEventListener('load', churn);
+</script>

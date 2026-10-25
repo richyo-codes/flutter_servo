@@ -13,6 +13,8 @@
 #include <memory>
 #include <vector>
 #include <thread>
+#include <fstream>
+#include <iterator>
 
 #include <gtk/gtk.h>
 
@@ -36,7 +38,9 @@ T Resolve(void* handle, const char* symbol) {
 
 void Usage(const char* argv0) {
   std::cerr << "usage: " << argv0
-            << " [--gtk-init] [--rtld-global] <path-to-librust_lib_flutter_servo.so>\n";
+            << " [--gtk-init] [--rtld-global] [--close-loading] [--input-controls]"
+            << " [--scroll-benchmark] [--html-file PATH] [--observe-ms N]"
+            << " [--navigate-after-ms N] <path-to-librust_lib_flutter_servo.so>\n";
 }
 
 }  // namespace
@@ -48,9 +52,26 @@ int main(int argc, char** argv) {
   bool input_controls = false;
   int dlopen_flags = RTLD_NOW | RTLD_LOCAL;
   std::string library_path;
+  std::string html_path;
+  int observe_ms = 0;
+  int navigate_after_ms = -1;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
+    if (arg == "--html-file" || arg == "--observe-ms" || arg == "--navigate-after-ms") {
+      if (++i >= argc) { Usage(argv[0]); return 2; }
+      if (arg == "--html-file") {
+        html_path = argv[i];
+      } else {
+        char* end = nullptr;
+        const long value = std::strtol(argv[i], &end, 10);
+        if (end == argv[i] || *end != '\0' || value < 0 || value > 60000) {
+          Usage(argv[0]); return 2;
+        }
+        (arg == "--observe-ms" ? observe_ms : navigate_after_ms) = value;
+      }
+      continue;
+    }
     if (arg == "--input-controls") {
       input_controls = true;
       continue;
@@ -78,9 +99,18 @@ int main(int argc, char** argv) {
     library_path = arg;
   }
 
-  if (library_path.empty()) {
+  if (library_path.empty() || (!html_path.empty() && input_controls) ||
+      (navigate_after_ms >= 0 && navigate_after_ms >= observe_ms)) {
     Usage(argv[0]);
     return 2;
+  }
+
+  std::string custom_html;
+  if (!html_path.empty()) {
+    std::ifstream input(html_path);
+    if (!input) { std::cerr << "native_probe: cannot open " << html_path << "\n"; return 2; }
+    custom_html.assign(std::istreambuf_iterator<char>(input), {});
+    std::cerr << "native_probe: testcase=" << html_path << "\n";
   }
 
   if (gtk_init) {
@@ -128,6 +158,7 @@ int main(int argc, char** argv) {
       "<!DOCTYPE html><input autofocus style='position:absolute;left:10px;top:10px;width:300px;height:30px' "
       "oninput='location.hash=encodeURIComponent(this.value)'>"
       "<a style='position:absolute;left:10px;top:70px' href='https://example.com/'>Probe link</a>";
+  if (!html_path.empty()) html = custom_html.c_str();
   std::cerr << "native_probe: session_set_html start\n";
   if (!session_set_html(session, html)) {
     std::cerr << "native_probe: session_set_html failed\n";
@@ -161,6 +192,29 @@ int main(int argc, char** argv) {
             << " max_call_ms=" << max_call_ms << "\n";
   std::cerr << "native_probe: GL renderer=" << glGetString(GL_RENDERER)
             << " EGL=" << eglGetCurrentDisplay() << "\n";
+
+  if (observe_ms > 0) {
+    auto progress = Resolve<uint8_t (*)(const void*)>(handle, "flutter_servo_session_load_progress");
+    if (!progress) return 17;
+    const auto observation_start = std::chrono::steady_clock::now();
+    bool navigated = false;
+    while (std::chrono::steady_clock::now() - observation_start <
+           std::chrono::milliseconds(observe_ms)) {
+      const auto elapsed = std::chrono::steady_clock::now() - observation_start;
+      if (!navigated && navigate_after_ms >= 0 &&
+          elapsed >= std::chrono::milliseconds(navigate_after_ms)) {
+        std::cerr << "native_probe: navigation-away start after_ms=" << navigate_after_ms << "\n";
+        if (!session_set_html(session, "<!doctype html><h1>Navigation destination</h1>")) return 18;
+        navigated = true;
+      }
+      session_render(session, 800, 600, rgba.data(), rgba.size());
+      if (progress(session) == 3) {
+        std::cerr << "native_probe: Servo reported a page crash\n"; return 19;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    std::cerr << "native_probe: observation complete duration_ms=" << observe_ms << "\n";
+  }
 
   if (input_controls) {
     auto take = Resolve<char* (*)(void*)>(handle, "flutter_servo_session_take_control_event");
