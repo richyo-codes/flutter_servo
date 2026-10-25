@@ -4,7 +4,8 @@ set -euo pipefail
 # Adapted from rnd_pcalc_ng_public's prebuilt GTK4 engine installer.
 flutter_root="${1:?Usage: $0 /path/to/flutter-sdk}"
 engine_version="${FLUTTER_PREBUILT_ENGINE_VERSION:?Set FLUTTER_PREBUILT_ENGINE_VERSION}"
-storage_base_url="${FLUTTER_ENGINE_STORAGE_BASE_URL:?Set FLUTTER_ENGINE_STORAGE_BASE_URL}"
+storage_base_url="${FLUTTER_STORAGE_BASE_URL:-${FLUTTER_ENGINE_STORAGE_BASE_URL:-}}"
+: "${storage_base_url:?Set FLUTTER_STORAGE_BASE_URL}"
 engine_root="$flutter_root/bin/cache/artifacts/engine"
 archive_base="${storage_base_url%/}/flutter_infra_release/flutter/$engine_version"
 
