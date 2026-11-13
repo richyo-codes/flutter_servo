@@ -3,7 +3,7 @@
 <title>Iframe parent lifecycle stress</title>
 <h1>Iframe navigation and removal stress</h1>
 <script>
-// Reproduces Servo 0.7's WindowProxy assertion intermittently on navigation-away.
+// Reproduces Servo 0.7/0.8's WindowProxy assertion on navigation-away.
 // Each child has an opaque origin and starts another browsing context.
 let iteration = 0;
 function churn() {

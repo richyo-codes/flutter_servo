@@ -40,7 +40,8 @@ void Usage(const char* argv0) {
   std::cerr << "usage: " << argv0
             << " [--gtk-init] [--rtld-global] [--close-loading] [--input-controls]"
             << " [--scroll-benchmark] [--html-file PATH] [--observe-ms N]"
-            << " [--navigate-after-ms N] <path-to-librust_lib_flutter_servo.so>\n";
+            << " [--navigate-after-ms N] [--verify-destination]"
+            << " <path-to-librust_lib_flutter_servo.so>\n";
 }
 
 }  // namespace
@@ -55,9 +56,14 @@ int main(int argc, char** argv) {
   std::string html_path;
   int observe_ms = 0;
   int navigate_after_ms = -1;
+  bool verify_destination = false;
 
   for (int i = 1; i < argc; ++i) {
     const std::string arg(argv[i]);
+    if (arg == "--verify-destination") {
+      verify_destination = true;
+      continue;
+    }
     if (arg == "--html-file" || arg == "--observe-ms" || arg == "--navigate-after-ms") {
       if (++i >= argc) { Usage(argv[0]); return 2; }
       if (arg == "--html-file") {
@@ -100,6 +106,7 @@ int main(int argc, char** argv) {
   }
 
   if (library_path.empty() || (!html_path.empty() && input_controls) ||
+      (verify_destination && navigate_after_ms < 0) ||
       (navigate_after_ms >= 0 && navigate_after_ms >= observe_ms)) {
     Usage(argv[0]);
     return 2;
@@ -204,7 +211,9 @@ int main(int argc, char** argv) {
       if (!navigated && navigate_after_ms >= 0 &&
           elapsed >= std::chrono::milliseconds(navigate_after_ms)) {
         std::cerr << "native_probe: navigation-away start after_ms=" << navigate_after_ms << "\n";
-        if (!session_set_html(session, "<!doctype html><h1>Navigation destination</h1>")) return 18;
+        if (!session_set_html(session,
+            "<!doctype html><body style='background:rgb(17,101,53)'>"
+            "<h1>Navigation destination</h1>")) return 18;
         navigated = true;
       }
       session_render(session, 800, 600, rgba.data(), rgba.size());
@@ -213,7 +222,13 @@ int main(int argc, char** argv) {
       }
       std::this_thread::sleep_for(std::chrono::milliseconds(5));
     }
-    std::cerr << "native_probe: observation complete duration_ms=" << observe_ms << "\n";
+    std::cerr << "native_probe: observation complete duration_ms=" << observe_ms
+              << " load_progress=" << static_cast<unsigned>(progress(session)) << "\n";
+    if (verify_destination && (progress(session) != 2 ||
+        rgba[0] != 17 || rgba[1] != 101 || rgba[2] != 53 || rgba[3] != 255)) {
+      std::cerr << "native_probe: navigation destination did not finish painting\n";
+      return 20;
+    }
   }
 
   if (input_controls) {
