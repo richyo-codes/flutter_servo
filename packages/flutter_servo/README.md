@@ -12,8 +12,11 @@ The package currently provides:
 
 The Linux surface renders real Servo content with wake-driven native texture
 updates. Rust and its Native Assets hook are contained in this package; Servo
-v0.7.0 and the public Surfman 0.14 fix are pinned in `rust/Cargo.toml`/`Cargo.lock`.
-No sibling Rust crate or local Servo/Surfman checkout is required.
+v0.8.0 with the WindowProxy fix and the public Surfman 0.14 fix are pinned in
+`rust/Cargo.toml`/`Cargo.lock`. Servo comes from the public
+[Servo fork](https://github.com/richyo-codes/servo); no SSH credentials are required.
+No sibling Rust crate or local Servo/Surfman checkout is required. Cargo uses
+the Git CLI through the workspace's `.cargo/config.toml`.
 
 The browser offers Servo-provided page context menus, modifier-aware keyboard
 selection, repeat events, and Servo's system clipboard support. Flutter text

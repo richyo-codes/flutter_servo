@@ -17,11 +17,15 @@ Frame updates are wake-driven; the GTK thread does not wait for scene readiness.
 
 ## Dependencies
 
-Servo and its allocator are pinned to the public `v0.7.0` release. Surfman
+Servo and its allocator are pinned to commit
+`18ead822e67b7660f7ee46cd03e6780940d7cc34` in the public
+[Servo fork](https://github.com/richyo-codes/servo), on branch
+`fix/windowproxy-inactive-parent-v0.8.0`. This is upstream `v0.8.0` plus the
+WindowProxy inactive-parent fix, preserving the full upstream history. Surfman
 0.14.0 uses the public [Surfman fork](https://github.com/richyo-codes/surfman)
 at commit `0e2cd47b6390eefb6d0ecbb927a34bc03fc0f2cb` from
-`fix/no-runtime-env-mutation-v4`. Cargo no longer requires local Servo or
-Surfman checkouts; the committed lockfile records the resolved revisions.
+`fix/no-runtime-env-mutation-v4`. Local Servo or Surfman checkouts and private
+SSH credentials are not required; the lockfile records the resolved revisions.
 
 The Surfman patch avoids changing process-wide Mesa environment variables
 after Flutter starts threads. It does not force software or PRIME adapter

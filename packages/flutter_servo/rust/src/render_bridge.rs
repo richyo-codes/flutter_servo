@@ -314,7 +314,10 @@ mod imp {
         fn load_progress(&self) -> u8 {
             if self.delegate.crashed.get() {
                 3
-            } else if self.delegate.load_status.get() == LoadStatus::Complete {
+            } else if matches!(
+                self.delegate.load_status.get(),
+                LoadStatus::Complete | LoadStatus::Stopped
+            ) {
                 2
             } else if self.delegate.frame_ready.get() {
                 1
