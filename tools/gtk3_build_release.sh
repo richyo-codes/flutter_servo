@@ -9,11 +9,17 @@ mkdir -p "$ROOT_DIR/logs"
 
 LOG_FILE="$ROOT_DIR/logs/gtk3_build_release_$(date +%Y%m%d_%H%M%S).log"
 
-FLUTTER_BIN="${FLUTTER_BIN:-/path/to/flutter-gtk4/bin/flutter}"
-LOCAL_ENGINE_SRC="${LOCAL_ENGINE_SRC:-/path/to/flutter-gtk4/engine/src}"
+FLUTTER_BIN=$(command -v "${FLUTTER_BIN:-flutter}" || true)
 
 if [[ ! -x "$FLUTTER_BIN" ]]; then
-  echo "Flutter binary not found or not executable: $FLUTTER_BIN" >&2
+  echo "Flutter not found. Add the GTK-enabled SDK to PATH or set FLUTTER_BIN." >&2
+  exit 1
+fi
+
+FLUTTER_BIN=$(readlink -f "$FLUTTER_BIN")
+LOCAL_ENGINE_SRC="${LOCAL_ENGINE_SRC:-$(dirname "$(dirname "$FLUTTER_BIN")")/engine/src}"
+if [[ ! -d "$LOCAL_ENGINE_SRC" ]]; then
+  echo "Local engine source not found: $LOCAL_ENGINE_SRC. Set LOCAL_ENGINE_SRC." >&2
   exit 1
 fi
 

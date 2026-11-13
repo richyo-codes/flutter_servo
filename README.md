@@ -65,16 +65,19 @@ surface only. Servo rendering remains Linux-only until an Android native plugin
 is implemented. The APK is written to
 `packages/flutter_servo/example/build/app/outputs/flutter-apk/app-debug.apk`.
 
-Build the GTK4 variant with the local Flutter GTK4 fork:
+Build the GTK4 variant with the public
+[Flutter GTK4 fork](https://github.com/richyo-codes/flutter) and a local engine:
 
 ```bash
-cd packages/flutter_servo/example
-FLUTTER_LINUX_GTK=gtk4 /path/to/flutter-gtk4/bin/flutter build linux --debug \
-  --linux-gtk=gtk4 \
-  --local-engine=host_debug_unopt \
-  --local-engine-host=host_debug_unopt \
-  --local-engine-src-path=/path/to/flutter-gtk4/engine/src
+export FLUTTER_BIN=/path/to/flutter-gtk4/bin/flutter
+export LOCAL_ENGINE_SRC=/path/to/flutter-gtk4/engine/src
+bash tools/gtk4_build.sh
 ```
+
+The build wrappers also find `flutter` on `PATH` and default the engine source
+to `engine/src` inside that SDK. Use `tools/gtk3_build.sh` for GTK3 debug builds
+or `tools/gtk3_build_release.sh` for GTK3 release builds. For the prebuilt GTK4
+SDK and RPM build path, see [GitHub Browser Builds](docs/github-actions.md).
 
 GTK3 is the default and remains the portable CPU-upload path. GTK4 creates an
 isolated `build/linux-gtk4` directory and is the target for EGLImage interop.
