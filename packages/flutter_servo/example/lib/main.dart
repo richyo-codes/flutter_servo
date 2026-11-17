@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_servo/flutter_servo.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'demos.dart';
+
 enum _ViewportMode { desktop, mobile }
 
 Future<void> main() async {
@@ -64,6 +66,7 @@ class _BrowserPageState extends State<BrowserPage> {
   List<String> _bookmarks = const [];
   late final Future<void> _bookmarksReady;
   bool _bookmarkUpdateInFlight = false;
+  int _demoLoadGeneration = 0;
 
   @override
   void initState() {
@@ -200,6 +203,13 @@ class _BrowserPageState extends State<BrowserPage> {
     if (rawInput.isEmpty) {
       return;
     }
+    for (final demo in BrowserDemo.values) {
+      if (rawInput == 'demo:${demo.id}') {
+        _openDemo(demo);
+        return;
+      }
+    }
+    _demoLoadGeneration++;
 
     final contentType = _isHtmlInput
         ? FlutterServoContentType.html
@@ -278,6 +288,31 @@ class _BrowserPageState extends State<BrowserPage> {
     _navigate();
   }
 
+  Future<void> _openDemo(BrowserDemo demo) async {
+    final generation = ++_demoLoadGeneration;
+    try {
+      final html = await rootBundle.loadString(demo.asset);
+      if (!mounted || generation != _demoLoadGeneration) return;
+      _addressFocusNode.unfocus();
+      setState(() {
+        _content = html;
+        _contentType = FlutterServoContentType.html;
+        _addressController.text = 'demo:${demo.id}';
+        _reloadRevision++;
+        _surfaceError = null;
+        _isLoading = true;
+        _loadProgress = FlutterServoLoadProgress.started;
+        _canGoBack = false;
+        _canGoForward = false;
+      });
+    } catch (error) {
+      if (!mounted || generation != _demoLoadGeneration) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Could not open demo: $error')));
+    }
+  }
+
   void _setViewportMode(_ViewportMode mode) {
     if (_viewportMode == mode) {
       return;
@@ -351,6 +386,7 @@ class _BrowserPageState extends State<BrowserPage> {
                   onReload: _reload,
                   onToggleBookmark: _toggleBookmark,
                   onOpenBookmark: _loadQuickSite,
+                  onOpenDemo: _openDemo,
                   onSubmit: _navigate,
                   onViewportModeChanged: _setViewportMode,
                 ),
@@ -450,6 +486,7 @@ class _BrowserToolbar extends StatelessWidget {
     required this.onReload,
     required this.onToggleBookmark,
     required this.onOpenBookmark,
+    required this.onOpenDemo,
     required this.onSubmit,
     required this.onViewportModeChanged,
   });
@@ -468,6 +505,7 @@ class _BrowserToolbar extends StatelessWidget {
   final Future<void> Function() onReload;
   final Future<void> Function() onToggleBookmark;
   final ValueChanged<String> onOpenBookmark;
+  final ValueChanged<BrowserDemo> onOpenDemo;
   final VoidCallback onSubmit;
   final ValueChanged<_ViewportMode> onViewportModeChanged;
 
@@ -559,6 +597,16 @@ class _BrowserToolbar extends StatelessWidget {
           final bookmarkControls = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              PopupMenuButton<BrowserDemo>(
+                key: const ValueKey('demos-menu'),
+                tooltip: 'Embedding demos',
+                onSelected: onOpenDemo,
+                itemBuilder: (context) => [
+                  for (final demo in BrowserDemo.values)
+                    PopupMenuItem(value: demo, child: Text(demo.label)),
+                ],
+                icon: const Icon(Icons.science_outlined),
+              ),
               IconButton(
                 key: const ValueKey('bookmark-toggle'),
                 tooltip:

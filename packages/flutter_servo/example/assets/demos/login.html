@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Servo demo: login</title>
+<style>
+:root{color-scheme:light;--ink:#18332e;--accent:#ac4429;--paper:#faf8f1}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(120deg,#faf8f1,#e9eee7);color:var(--ink);font:18px/1.65 Georgia,serif}
+main{max-width:900px;margin:auto;padding:40px 24px 80px}header{border-bottom:2px solid var(--ink);margin-bottom:32px}
+small,button,input,select,output,pre,nav{font-family:monospace}small{color:var(--accent)}h1{font-size:clamp(32px,7vw,62px);line-height:1.1;margin:16px 0 24px}h2{line-height:1.2}
+a{color:var(--accent)}button,input,select{font-size:16px;padding:12px;max-width:100%}button{cursor:pointer;background:var(--ink);color:white;border:0;border-radius:4px;margin:8px 8px 8px 0}
+input,select{border:1px solid #80948b;background:#fff}label{display:block;margin:20px 0 8px}section{padding:16px 0;border-bottom:1px solid #bdc8bf}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#e1e7df;padding:16px}output{display:block;padding:16px;background:#e1e7df;overflow-wrap:anywhere}
+nav{display:flex;gap:20px;flex-wrap:wrap}video{width:100%;background:#13201d}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+[hidden]{display:none!important}@media(max-width:480px){main{padding:24px 16px}body{font-size:16px}}
+</style>
+</head><body><main>
+<header><small>01 / EMBEDDED FORM LAB</small><h1>Sign in. Give consent.</h1></header>
+<p><strong>Simulation only.</strong> No provider, credentials, tokens, or network requests.
+This tests form focus, keyboard input, validation, and DOM updates, not real OAuth.</p>
+<form id="login"><label for="alias">Demo display name (not your email or password)</label>
+<input id="alias" required maxlength="60" autocomplete="off" placeholder="Demo user">
+<button type="submit">Continue to consent</button></form>
+<section id="consent" hidden><h2>Allow Notebook Demo?</h2>
+<p id="identity"></p><p>Requested permission: read your fictional profile.</p>
+<button id="allow">Allow</button><button id="deny">Deny</button></section>
+<output id="result" aria-live="polite">Waiting for a demo name.</output>
+<button id="reset" type="button">Start over</button>
+<p>Production native-app OAuth should use an external browser with authorization code + PKCE.
+This fixture does not implement redirect handling, state validation, or token exchange.</p>
+<script>
+const login=document.getElementById('login'), consent=document.getElementById('consent'),
+alias=document.getElementById('alias'), result=document.getElementById('result');
+login.addEventListener('submit',event=>{event.preventDefault();
+document.getElementById('identity').textContent='Continue as '+alias.value.trim();
+login.hidden=true;consent.hidden=false;document.getElementById('allow').focus();});
+function finish(message){result.textContent=message;consent.hidden=true;document.getElementById('reset').focus();}
+document.getElementById('allow').onclick=()=>finish('Mock consent granted. No authentication occurred.');
+document.getElementById('deny').onclick=()=>finish('Mock consent denied. No authentication occurred.');
+document.getElementById('reset').onclick=()=>{login.reset();login.hidden=false;consent.hidden=true;result.textContent='Waiting for a demo name.';alias.focus();};
+</script>
+</main></body></html>

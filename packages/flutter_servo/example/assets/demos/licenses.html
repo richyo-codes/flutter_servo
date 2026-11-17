@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Servo demo: licenses</title>
+<style>
+:root{color-scheme:light;--ink:#18332e;--accent:#ac4429;--paper:#faf8f1}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(120deg,#faf8f1,#e9eee7);color:var(--ink);font:18px/1.65 Georgia,serif}
+main{max-width:900px;margin:auto;padding:40px 24px 80px}header{border-bottom:2px solid var(--ink);margin-bottom:32px}
+small,button,input,select,output,pre,nav{font-family:monospace}small{color:var(--accent)}h1{font-size:clamp(32px,7vw,62px);line-height:1.1;margin:16px 0 24px}h2{line-height:1.2}
+a{color:var(--accent)}button,input,select{font-size:16px;padding:12px;max-width:100%}button{cursor:pointer;background:var(--ink);color:white;border:0;border-radius:4px;margin:8px 8px 8px 0}
+input,select{border:1px solid #80948b;background:#fff}label{display:block;margin:20px 0 8px}section{padding:16px 0;border-bottom:1px solid #bdc8bf}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#e1e7df;padding:16px}output{display:block;padding:16px;background:#e1e7df;overflow-wrap:anywhere}
+nav{display:flex;gap:20px;flex-wrap:wrap}video{width:100%;background:#13201d}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+[hidden]{display:none!important}@media(max-width:480px){main{padding:24px 16px}body{font-size:16px}}
+</style>
+</head><body><main>
+<header><small>02 / IN-APP NOTICES</small><h1>License reader.</h1></header>
+<p>Sample notices for testing search, disclosure controls, scrolling, and text selection.
+<strong>Not the application's legal inventory.</strong> These fictional entries do not replace
+the actual license files shipped with dependencies.</p>
+<label for="search">Filter sample components</label><input id="search" type="search" placeholder="Try sample or icons">
+<output id="count" aria-live="polite">3 sample notices</output>
+<section data-name="sample toolkit"><details open><summary>Sample Toolkit / example notice</summary>
+<p>Copyright SAMPLE YEAR, SAMPLE AUTHOR. Placeholder only.</p><p>A production notice viewer
+must display the complete, unmodified license text and required attribution for the exact
+dependency versions distributed. Select this paragraph and copy it to test selection.</p></details></section>
+<section data-name="demo icons"><details><summary>Demo Icons / example attribution</summary>
+<p>Fictional artwork attribution. Replace with the source, author, and license of actual bundled artwork.</p></details></section>
+<section data-name="sample media"><details><summary>Sample Media / example notice</summary>
+<p>Media attribution belongs with the files you distribute, not just with your application source.</p></details></section>
+<p id="empty" hidden>No matching notices.</p>
+<script>
+document.getElementById('search').oninput=function(){let count=0;
+document.querySelectorAll('[data-name]').forEach(section=>{
+section.hidden=!section.dataset.name.includes(this.value.toLowerCase().trim());if(!section.hidden)count++;});
+document.getElementById('count').textContent=count+' sample notices';
+document.getElementById('empty').hidden=count!==0;};
+</script>
+</main></body></html>

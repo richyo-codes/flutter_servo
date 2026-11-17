@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Servo demo: video</title>
+<style>
+:root{color-scheme:light;--ink:#18332e;--accent:#ac4429;--paper:#faf8f1}
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(120deg,#faf8f1,#e9eee7);color:var(--ink);font:18px/1.65 Georgia,serif}
+main{max-width:900px;margin:auto;padding:40px 24px 80px}header{border-bottom:2px solid var(--ink);margin-bottom:32px}
+small,button,input,select,output,pre,nav{font-family:monospace}small{color:var(--accent)}h1{font-size:clamp(32px,7vw,62px);line-height:1.1;margin:16px 0 24px}h2{line-height:1.2}
+a{color:var(--accent)}button,input,select{font-size:16px;padding:12px;max-width:100%}button{cursor:pointer;background:var(--ink);color:white;border:0;border-radius:4px;margin:8px 8px 8px 0}
+input,select{border:1px solid #80948b;background:#fff}label{display:block;margin:20px 0 8px}section{padding:16px 0;border-bottom:1px solid #bdc8bf}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#e1e7df;padding:16px}output{display:block;padding:16px;background:#e1e7df;overflow-wrap:anywhere}
+nav{display:flex;gap:20px;flex-wrap:wrap}video{width:100%;background:#13201d}button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:3px}
+[hidden]{display:none!important}@media(max-width:480px){main{padding:24px 16px}body{font-size:16px}}
+</style>
+</head><body><main>
+<header><small>04 / MEDIA DIAGNOSTICS</small><h1>Motion, not a screenshot.</h1></header>
+<p>Remote MDN flower clip. Network access and a working media backend are required.
+The current Cargo configuration does not enable Servo's GStreamer feature.
+A rendered player alone is not proof that playback works.</p>
+<video id="video" controls playsinline preload="none" aria-label="Flower test video"></video>
+<label for="source">Source format</label><select id="source"><option value="mp4">MP4 / H.264</option>
+<option value="webm">WebM / VP8</option></select>
+<div><button id="play">Load and play</button><button id="pause">Pause</button><button id="seek">Seek +2s</button></div>
+<output id="status" aria-live="polite">Press Load and play. Autoplay is intentionally disabled.</output>
+<pre id="capabilities"></pre><pre id="events" aria-label="Recent media events"></pre>
+<p>Try pause, seeking, resizing, and moving between demos during playback.
+No DRM, fullscreen, or audio support is implied by this test.</p>
+<script>
+const video=document.getElementById('video'),status=document.getElementById('status'),
+source=document.getElementById('source'),events=document.getElementById('events');
+const urls={mp4:'https://developer.mozilla.org/shared-assets/videos/flower.mp4',
+webm:'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.webm'};
+document.getElementById('capabilities').textContent=
+'canPlayType (capability hint, not a playback guarantee):\nMP4: '+(video.canPlayType('video/mp4; codecs="avc1.42E01E"')||'unsupported')+
+'\nWebM: '+(video.canPlayType('video/webm; codecs="vp8"')||'unsupported');
+function report(message){status.textContent=message;}
+document.getElementById('play').onclick=async()=>{try{
+if(video.getAttribute('src')!==urls[source.value]){video.src=urls[source.value];video.load();}
+await video.play();report('Playing');}catch(error){report('Playback failed: '+error.name+' - '+error.message);}};
+document.getElementById('pause').onclick=()=>video.pause();
+document.getElementById('seek').onclick=()=>{if(Number.isFinite(video.duration))video.currentTime=Math.min(video.duration,video.currentTime+2);else report('No seekable duration yet.');};
+source.onchange=()=>{video.pause();video.removeAttribute('src');video.load();report('Source changed. Press Load and play.');};
+const log=[];['loadstart','loadedmetadata','canplay','playing','pause','waiting','stalled','seeked','ended','error'].forEach(name=>{
+video.addEventListener(name,()=>{log.push(name+' @ '+video.currentTime.toFixed(2)+'s');
+events.textContent=log.slice(-12).join('\n');
+if(video.error)report('Media error '+video.error.code+': '+video.error.message+' (check backend, codec and network)');
+else report(name+'; readyState='+video.readyState+'; networkState='+video.networkState);});});
+</script>
+</main></body></html>

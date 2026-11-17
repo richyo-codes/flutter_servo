@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_servo/flutter_servo.dart';
 import 'package:flutter_servo_example/main.dart';
+import 'package:flutter_servo_example/demos.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -20,6 +21,47 @@ void main() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, null);
   });
+
+  for (final demo in BrowserDemo.values) {
+    testWidgets('opens ${demo.id} as bundled HTML on a phone viewport', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            if (call.method == 'createTexture' ||
+                call.method == 'resizeTexture') {
+              return 1;
+            }
+            return true;
+          });
+      await tester.pumpWidget(const ServoBrowserApp());
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('demos-menu')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.tap(find.text(demo.label));
+      await tester.runAsync(() async {
+        // Resolve the real asset outside the fake-async widget clock.
+        await rootBundle.loadString(demo.asset);
+      });
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      final htmlCalls = calls.where((call) => call.method == 'setHtml');
+      expect(htmlCalls, isNotEmpty);
+      expect(
+        (htmlCalls.last.arguments as List).first,
+        contains('<title>Servo demo: ${demo.id}</title>'),
+      );
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
 
   for (final nativeCrash in [true, false]) {
     testWidgets(
