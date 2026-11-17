@@ -1,5 +1,11 @@
 # Browser backends
 
+The package and example require Flutter 3.47 or newer and Dart 3.13 or newer
+(below Dart 4). These declarations match the current resolved WebView platform
+implementations. Android's minimum is explicitly API 24; this dependency update
+does not raise it. A future iOS runner should use at least iOS 15 for the current
+Flutter toolchain; no iOS runner is included or build-verified here.
+
 Desktop remains the Servo target. The default `auto` policy uses Servo on Linux
 and Windows, and `webview_flutter` on Android/iOS. macOS and Flutter web currently
 report `unsupported-backend`; there is no silent engine substitution there.
