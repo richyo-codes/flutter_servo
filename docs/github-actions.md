@@ -9,7 +9,7 @@ section and are retained for 14 days.
 The build uses the public Flutter GTK4 fork and precompiled engine artifacts:
 
 - Flutter fork revision: `de20cd2c06847dbc887df574c585484c447a257c`
-- Prebuilt engine: `f8edeef41f4a89dc912421fedbd6102252394dab`
+- Prebuilt engine: `f2b4375245d63bdb7007d42b4032e0e8d079780c`
 - FVM: `4.2.0`
 - Runner: Ubuntu 26.04, x86_64
 
