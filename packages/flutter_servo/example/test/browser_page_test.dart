@@ -58,6 +58,46 @@ void main() {
         (htmlCalls.last.arguments as List).first,
         contains('<title>Servo demo: ${demo.id}</title>'),
       );
+      final html = (htmlCalls.last.arguments as List).first as String;
+      final dataUrl = Uri.dataFromString(
+        html,
+        mimeType: 'text/html',
+      ).toString();
+      Future<void> reportNavigation(String url) async {
+        final reply = Completer<void>();
+        await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+            .handlePlatformMessage(
+              channel.name,
+              const StandardMethodCodec().encodeMethodCall(
+                MethodCall('navigationStateChanged', [url, true, false]),
+              ),
+              (_) => reply.complete(),
+            );
+        await reply.future;
+        await tester.pump();
+      }
+
+      String address() =>
+          tester.widget<TextField>(find.byType(TextField)).controller!.text;
+      await reportNavigation('$dataUrl#section');
+      expect(address(), 'demo:${demo.id}');
+      await reportNavigation('https://example.org/');
+      expect(address(), 'https://example.org/');
+      // History back to a known demo should restore its readable alias.
+      await reportNavigation(dataUrl);
+      expect(address(), 'demo:${demo.id}');
+      const unrelated = 'data:text/html,unrelated';
+      await reportNavigation(unrelated);
+      expect(address(), unrelated);
+      calls.clear();
+      await tester.enterText(find.byType(TextField), 'demo:missing');
+      await tester.testTextInput.receiveAction(TextInputAction.go);
+      await tester.pump();
+      expect(calls.where((call) => call.method == 'setUrl'), isEmpty);
+      expect(
+        find.text('Unknown demo. Choose one from Embedding demos.'),
+        findsOneWidget,
+      );
       expect(tester.takeException(), isNull);
       await tester.pumpWidget(const SizedBox.shrink());
     });

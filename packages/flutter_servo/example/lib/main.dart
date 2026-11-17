@@ -67,6 +67,7 @@ class _BrowserPageState extends State<BrowserPage> {
   late final Future<void> _bookmarksReady;
   bool _bookmarkUpdateInFlight = false;
   int _demoLoadGeneration = 0;
+  final Map<String, BrowserDemo> _demoDocuments = {};
 
   @override
   void initState() {
@@ -209,6 +210,14 @@ class _BrowserPageState extends State<BrowserPage> {
         return;
       }
     }
+    if (Uri.tryParse(rawInput)?.scheme == 'demo') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Unknown demo. Choose one from Embedding demos.'),
+        ),
+      );
+      return;
+    }
     _demoLoadGeneration++;
 
     final contentType = _isHtmlInput
@@ -295,6 +304,8 @@ class _BrowserPageState extends State<BrowserPage> {
       if (!mounted || generation != _demoLoadGeneration) return;
       _addressFocusNode.unfocus();
       setState(() {
+        // FlutterServoSurface trims content before sending it to the renderer.
+        _demoDocuments[html.trim()] = demo;
         _content = html;
         _contentType = FlutterServoContentType.html;
         _addressController.text = 'demo:${demo.id}';
@@ -331,11 +342,28 @@ class _BrowserPageState extends State<BrowserPage> {
     }
     setState(() {
       if (state.url.isNotEmpty && !_addressFocusNode.hasFocus) {
-        _addressController.text = state.url;
+        _addressController.text = _displayAddress(state.url);
       }
       _canGoBack = state.canGoBack;
       _canGoForward = state.canGoForward;
     });
+  }
+
+  String _displayAddress(String url) {
+    if (url.startsWith('data:')) {
+      try {
+        // Match document content, not merely the scheme: unrelated data URLs
+        // must not acquire a trusted demo label, including during history moves.
+        // UriData treats a literal '#' as payload; Servo uses it as a fragment.
+        // Encoded %23 characters inside the document must remain untouched.
+        final uri = Uri.parse(url.split('#').first);
+        final demo = _demoDocuments[uri.data?.contentAsString()];
+        if (demo != null) return 'demo:${demo.id}';
+      } on FormatException {
+        // Preserve malformed or non-text URLs as supplied by the renderer.
+      }
+    }
+    return url;
   }
 
   void _handleLoadProgress(FlutterServoLoadProgress progress) {
