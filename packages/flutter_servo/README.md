@@ -2,6 +2,11 @@
 
 Linux-first Flutter package for embedding Servo-backed web content.
 
+Windows x64 support is experimental. The Windows plugin reuses the Dart input
+and browser-control APIs, and sends Servo frames through Flutter pixel-buffer
+textures. Its build hook bundles the ANGLE DLLs needed at runtime. See the
+repository's [Windows guide](../../docs/windows.md) for setup and testing.
+
 ## Current Scope
 
 The package currently provides:

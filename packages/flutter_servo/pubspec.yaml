@@ -28,3 +28,5 @@ flutter:
     platforms:
       linux:
         pluginClass: FlutterServoPlugin
+      windows:
+        pluginClass: FlutterServoPluginCApi

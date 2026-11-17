@@ -20,3 +20,6 @@ jobs:
   gtk4-rpm:
     needs: tests
     uses: ./.github/workflows/build-gtk4-rpm.yml
+
+  windows:
+    uses: ./.github/workflows/build-windows.yml

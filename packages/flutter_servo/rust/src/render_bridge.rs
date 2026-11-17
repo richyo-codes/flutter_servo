@@ -46,6 +46,7 @@ mod imp {
     #[derive(Clone)]
     struct SessionWaker {
         pending: Arc<AtomicBool>,
+        callback: Arc<crate::wake_callback::WakeCallback>,
         #[cfg(target_os = "linux")]
         signal: Arc<crate::wake_signal::WakeSignal>,
     }
@@ -57,6 +58,7 @@ mod imp {
 
         fn wake(&self) {
             self.pending.store(true, Ordering::Relaxed);
+            self.callback.notify();
             #[cfg(target_os = "linux")]
             self.signal.notify();
         }
@@ -163,6 +165,7 @@ mod imp {
         size: PhysicalSize<u32>,
         rendered_frame_epoch: u64,
         wake_pending: Arc<AtomicBool>,
+        wake_callback: Arc<crate::wake_callback::WakeCallback>,
         keyboard: RefCell<crate::keyboard_input::KeyboardState>,
         #[cfg(target_os = "linux")]
         wake_signal: Arc<crate::wake_signal::WakeSignal>,
@@ -209,6 +212,7 @@ mod imp {
 
             eprintln!("flutter_servo: rust session building Servo");
             let wake_pending = Arc::new(AtomicBool::new(true));
+            let wake_callback = Arc::new(crate::wake_callback::WakeCallback::default());
             #[cfg(target_os = "linux")]
             let wake_signal = Arc::new(
                 crate::wake_signal::WakeSignal::new()
@@ -218,6 +222,7 @@ mod imp {
                 .preferences(preferences)
                 .event_loop_waker(Box::new(SessionWaker {
                     pending: wake_pending.clone(),
+                    callback: wake_callback.clone(),
                     #[cfg(target_os = "linux")]
                     signal: wake_signal.clone(),
                 }))
@@ -237,6 +242,7 @@ mod imp {
                 size,
                 rendered_frame_epoch: 0,
                 wake_pending,
+                wake_callback,
                 keyboard: RefCell::new(crate::keyboard_input::KeyboardState::default()),
                 #[cfg(target_os = "linux")]
                 wake_signal,
@@ -628,6 +634,7 @@ mod imp {
 
     impl Drop for ServoRenderSession {
         fn drop(&mut self) {
+            self.wake_callback.set(None, null_mut());
             eprintln!("flutter_servo: rust session shutdown start");
             self.delegate.controls.borrow_mut().reset();
             if let Some(context) = self.rendering_context.as_ref() {
@@ -784,6 +791,24 @@ mod imp {
             .cast::<ServoRenderSession>()
             .as_ref()
             .is_some_and(ServoRenderSession::poll)
+    }
+
+    /// The callback must only enqueue work and must not call back into Servo.
+    /// Clear it before destroying its context or the host's message window.
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_set_wake_callback(
+        session: *const c_void,
+        callback: Option<crate::wake_callback::Callback>,
+        context: *mut c_void,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
+            return false;
+        };
+        session.wake_callback.set(callback, context);
+        if callback.is_some() {
+            session.wake_callback.notify();
+        }
+        true
     }
 
     #[cfg(target_os = "linux")]

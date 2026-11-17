@@ -2,6 +2,10 @@
 
 Linux-first Flutter + Servo embedding experiment.
 
+An experimental Windows x64 backend and example runner are also available.
+See [Windows builds](docs/windows.md) for prerequisites, build commands, and
+the runtime checks still needed on Windows.
+
 ## Current State
 
 This repository currently contains:

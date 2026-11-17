@@ -277,7 +277,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           arguments[2] is! bool) {
         throw PlatformException(
           code: 'invalid-navigation-state',
-          message: 'Expected [url, canGoBack, canGoForward] from Linux.',
+          message: 'Expected [url, canGoBack, canGoForward] from the native plugin.',
         );
       }
       final state = FlutterServoNavigationState(
@@ -310,7 +310,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     } else {
       throw PlatformException(
         code: 'invalid-load-state',
-        message: 'Expected a load progress value from the Linux plugin.',
+        message: 'Expected a load progress value from the native plugin.',
       );
     }
 
