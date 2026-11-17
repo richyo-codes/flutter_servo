@@ -7,6 +7,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'servo_text_input.dart';
+import 'backend.dart';
+import 'mobile_webview.dart';
 
 enum FlutterServoContentType {
   url('setUrl'),
@@ -32,6 +34,20 @@ class FlutterServoNavigationState {
 }
 
 class FlutterServoSurface extends StatefulWidget {
+  FlutterServoSurface._copy(FlutterServoSurface config)
+    : contentType = config.contentType,
+      content = config.content,
+      fallback = config.fallback,
+      enableInputPlumbing = config.enableInputPlumbing,
+      enableContextMenu = config.enableContextMenu,
+      onLoadStateChanged = config.onLoadStateChanged,
+      onLoadProgressChanged = config.onLoadProgressChanged,
+      onNavigationStateChanged = config.onNavigationStateChanged,
+      onError = config.onError,
+      loadTimeout = config.loadTimeout,
+      reloadRevision = config.reloadRevision,
+      backend = config.backend;
+
   const FlutterServoSurface.url({
     super.key,
     required this.content,
@@ -44,6 +60,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onError,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
+    this.backend,
   }) : contentType = FlutterServoContentType.url;
 
   const FlutterServoSurface.html({
@@ -58,6 +75,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onError,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
+    this.backend,
   }) : contentType = FlutterServoContentType.html;
 
   final FlutterServoContentType contentType;
@@ -75,6 +93,47 @@ class FlutterServoSurface extends StatefulWidget {
   /// Maximum wait for completion after native loading starts; null disables it.
   final Duration? loadTimeout;
   final int reloadRevision;
+  final FlutterServoBackend? backend;
+
+  @override
+  State<FlutterServoSurface> createState() => _BackendSurfaceState();
+}
+
+class _BackendSurfaceState extends State<FlutterServoSurface> {
+  bool _reportedUnsupported = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final backend = resolveFlutterServoBackend(
+      widget.backend ?? BackendSession.preference,
+    );
+    if (backend == null) {
+      if (!_reportedUnsupported) {
+        _reportedUnsupported = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          widget.onLoadStateChanged?.call(false);
+          widget.onLoadProgressChanged?.call(FlutterServoLoadProgress.failed);
+          widget.onError?.call(
+            PlatformException(
+              code: 'unsupported-backend',
+              message:
+                  'The requested browser backend is unavailable on this platform.',
+            ),
+          );
+        });
+      }
+      return widget.fallback;
+    }
+    _reportedUnsupported = false;
+    return backend == FlutterServoBackend.webview
+        ? MobileWebView(config: widget)
+        : _NativeSurface(widget);
+  }
+}
+
+class _NativeSurface extends FlutterServoSurface {
+  _NativeSurface(super.config) : super._copy();
 
   @override
   State<FlutterServoSurface> createState() => _FlutterServoSurfaceState();
@@ -277,7 +336,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           arguments[2] is! bool) {
         throw PlatformException(
           code: 'invalid-navigation-state',
-          message: 'Expected [url, canGoBack, canGoForward] from the native plugin.',
+          message:
+              'Expected [url, canGoBack, canGoForward] from the native plugin.',
         );
       }
       final state = FlutterServoNavigationState(

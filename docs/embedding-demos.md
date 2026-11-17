@@ -4,7 +4,8 @@ Run the existing browser example, then open **Embedding demos** (the flask icon
 beside bookmarks). All four examples use the same native Servo surface. Their
 HTML lives in `packages/flutter_servo/example/assets/demos/` and can also be
 opened in another browser for comparison. Switch to the phone viewport to test
-responsive content; this does not establish Android backend support.
+responsive content. Android uses the system WebView, not Servo; see
+[backend selection](backends.md).
 
 | Demo | Test |
 | --- | --- |

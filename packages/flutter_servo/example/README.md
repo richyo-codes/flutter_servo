@@ -7,6 +7,7 @@ consent, license-reader, documentation, and video diagnostic pages. See the
 [demo guide](../../../docs/embedding-demos.md) for test steps and limitations.
 The login flow is mock-only; video playback depends on the native media backend.
 
-The Linux runner embeds Servo. The Android runner currently validates the
-responsive Flutter browser chrome and displays the fallback surface because the
-package does not yet provide an Android Servo plugin.
+The Linux runner embeds Servo; Windows support is experimental. Android uses
+the system WebView, not Servo. The package also selects WKWebView on iOS, but this
+example does not yet include an iOS runner. See
+[backend selection](../../../docs/backends.md) for capabilities and limitations.

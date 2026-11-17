@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,7 +24,7 @@ void main() {
   });
 
   for (final demo in BrowserDemo.values) {
-    testWidgets('opens ${demo.id} as bundled HTML on a phone viewport', (
+    testServoWidgets('opens ${demo.id} as bundled HTML on a phone viewport', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(360, 640);
@@ -104,7 +105,7 @@ void main() {
   }
 
   for (final nativeCrash in [true, false]) {
-    testWidgets(
+    testServoWidgets(
       nativeCrash
           ? 'offers retry after a native crash'
           : 'offers retry after a rejected load',
@@ -159,7 +160,7 @@ void main() {
     );
   }
 
-  testWidgets('Ctrl+L focuses, replaces, and submits the address', (
+  testServoWidgets('Ctrl+L focuses, replaces, and submits the address', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -211,7 +212,7 @@ void main() {
     expect(navigation.arguments, ['https://example.com']);
   });
 
-  testWidgets('Ctrl+R reloads and immediately enters loading state', (
+  testServoWidgets('Ctrl+R reloads and immediately enters loading state', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -250,7 +251,7 @@ void main() {
     (LogicalKeyboardKey.keyD, LogicalKeyboardKey.altLeft),
     (LogicalKeyboardKey.keyK, LogicalKeyboardKey.controlLeft),
   ]) {
-    testWidgets(
+    testServoWidgets(
       'address shortcut ${shortcut.$1.keyLabel} works from webpage focus',
       (tester) async {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -282,7 +283,7 @@ void main() {
   }
 
   for (final size in [const Size(360, 640), const Size(390, 844)]) {
-    testWidgets(
+    testServoWidgets(
       'browser chrome fits ${size.width.toInt()}x${size.height.toInt()}',
       (tester) async {
         tester.view.physicalSize = size;
@@ -309,7 +310,7 @@ void main() {
     );
   }
 
-  testWidgets('bookmarks persist and open from the toolbar menu', (
+  testServoWidgets('bookmarks persist and open from the toolbar menu', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -354,7 +355,7 @@ void main() {
     expect(preferences.getStringList('browser.bookmarks'), isEmpty);
   });
 
-  testWidgets('restores persisted bookmarks', (tester) async {
+  testServoWidgets('restores persisted bookmarks', (tester) async {
     SharedPreferences.setMockInitialValues({
       'browser.bookmarks': ['https://servo.org'],
     });
@@ -378,4 +379,12 @@ void main() {
     );
     expect(toggle.tooltip, 'Remove bookmark');
   });
+}
+
+void testServoWidgets(String description, WidgetTesterCallback callback) {
+  testWidgets(
+    description,
+    callback,
+    variant: TargetPlatformVariant({TargetPlatform.linux}),
+  );
 }

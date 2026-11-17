@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -40,7 +41,7 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
-  testWidgets(
+  testServoWidgets(
     'keeps loading UI until a real frame, preserves it during navigation',
     (tester) async {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -82,7 +83,7 @@ void main() {
     },
   );
 
-  testWidgets('accepts retained frame notification while reattaching', (
+  testServoWidgets('accepts retained frame notification while reattaching', (
     tester,
   ) async {
     var creations = 0;
@@ -126,7 +127,7 @@ void main() {
   });
 
   for (final crash in [true, false]) {
-    testWidgets(
+    testServoWidgets(
       crash
           ? 'reports native crashes once until retry'
           : 'times out stalled native loads',
@@ -209,7 +210,7 @@ void main() {
     );
   }
 
-  testWidgets('reports failed loads once and allows explicit reload', (
+  testServoWidgets('reports failed loads once and allows explicit reload', (
     tester,
   ) async {
     final errors = <PlatformException>[];
@@ -260,7 +261,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('serializes creation and loads the latest pending content', (
+  testServoWidgets('serializes creation and loads the latest pending content', (
     tester,
   ) async {
     final creation = Completer<int>();
@@ -302,7 +303,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('forwards texture-local physical pointer coordinates', (
+  testServoWidgets('forwards texture-local physical pointer coordinates', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -356,50 +357,51 @@ void main() {
     await pointer.up();
   });
 
-  testWidgets('converts both scroll axes to Servo physical motion deltas', (
-    tester,
-  ) async {
-    final calls = <MethodCall>[];
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          calls.add(call);
-          if (call.method == 'createTexture' ||
-              call.method == 'resizeTexture') {
-            return 1;
-          }
-          return null;
-        });
-    tester.view.devicePixelRatio = 2;
-    addTearDown(tester.view.resetDevicePixelRatio);
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: FlutterServoSurface.html(
-          content: '<p>Scroll target</p>',
-          fallback: ColoredBox(color: Colors.white),
-        ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-    final origin = tester.getTopLeft(find.byType(FlutterServoSurface));
-    for (final delta in [const Offset(12, 30), const Offset(-12, -30)]) {
-      await tester.sendEventToBinding(
-        PointerScrollEvent(
-          position: origin + const Offset(25, 30),
-          scrollDelta: delta,
+  testServoWidgets(
+    'converts both scroll axes to Servo physical motion deltas',
+    (tester) async {
+      final calls = <MethodCall>[];
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            calls.add(call);
+            if (call.method == 'createTexture' ||
+                call.method == 'resizeTexture') {
+              return 1;
+            }
+            return null;
+          });
+      tester.view.devicePixelRatio = 2;
+      addTearDown(tester.view.resetDevicePixelRatio);
+      await tester.pumpWidget(
+        const MaterialApp(
+          home: FlutterServoSurface.html(
+            content: '<p>Scroll target</p>',
+            fallback: ColoredBox(color: Colors.white),
+          ),
         ),
       );
       await tester.pump();
-    }
-    final wheels = calls.where((call) => call.method == 'notifyMouseWheel');
-    expect(wheels.map((call) => call.arguments).toList(), [
-      [50, 60, -24, -60],
-      [50, 60, 24, 60],
-    ]);
-    await tester.pumpWidget(const SizedBox.shrink());
-  });
+      await tester.pump();
+      final origin = tester.getTopLeft(find.byType(FlutterServoSurface));
+      for (final delta in [const Offset(12, 30), const Offset(-12, -30)]) {
+        await tester.sendEventToBinding(
+          PointerScrollEvent(
+            position: origin + const Offset(25, 30),
+            scrollDelta: delta,
+          ),
+        );
+        await tester.pump();
+      }
+      final wheels = calls.where((call) => call.method == 'notifyMouseWheel');
+      expect(wheels.map((call) => call.arguments).toList(), [
+        [50, 60, -24, -60],
+        [50, 60, 24, 60],
+      ]);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
 
-  testWidgets('forwards repeats and resolves page-specific menus', (
+  testServoWidgets('forwards repeats and resolves page-specific menus', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -504,7 +506,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('reloads unchanged content when the revision changes', (
+  testServoWidgets('reloads unchanged content when the revision changes', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -554,49 +556,52 @@ void main() {
     expect(calls.where((call) => call.method == 'refreshTexture'), isNotEmpty);
   });
 
-  testWidgets('retries refresh when the first native frame is unavailable', (
-    tester,
-  ) async {
-    var refreshAttempts = 0;
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (call) async {
-          if (call.method == 'createTexture' ||
-              call.method == 'resizeTexture') {
-            return 1;
-          }
-          if (call.method == 'refreshTexture') {
-            refreshAttempts++;
-            if (refreshAttempts == 1) {
-              throw PlatformException(
-                code: 'render-failed',
-                message: 'Frame is not ready yet.',
-              );
+  testServoWidgets(
+    'retries refresh when the first native frame is unavailable',
+    (tester) async {
+      var refreshAttempts = 0;
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (call) async {
+            if (call.method == 'createTexture' ||
+                call.method == 'resizeTexture') {
+              return 1;
             }
-          }
-          return null;
-        });
+            if (call.method == 'refreshTexture') {
+              refreshAttempts++;
+              if (refreshAttempts == 1) {
+                throw PlatformException(
+                  code: 'render-failed',
+                  message: 'Frame is not ready yet.',
+                );
+              }
+            }
+            return null;
+          });
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: SizedBox(
-          width: 200,
-          height: 100,
-          child: FlutterServoSurface.html(
-            content: '<p>Delayed frame</p>',
-            fallback: const ColoredBox(color: Colors.white),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SizedBox(
+            width: 200,
+            height: 100,
+            child: FlutterServoSurface.html(
+              content: '<p>Delayed frame</p>',
+              fallback: const ColoredBox(color: Colors.white),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 40));
-    await tester.pump(const Duration(milliseconds: 120));
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 40));
+      await tester.pump(const Duration(milliseconds: 120));
 
-    expect(refreshAttempts, greaterThanOrEqualTo(2));
-  });
+      expect(refreshAttempts, greaterThanOrEqualTo(2));
+    },
+  );
 
-  testWidgets('does not request refreshes for pointer input', (tester) async {
+  testServoWidgets('does not request refreshes for pointer input', (
+    tester,
+  ) async {
     final firstRefresh = Completer<void>();
     var refreshAttempts = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -644,7 +649,7 @@ void main() {
     expect(refreshAttempts, 1);
   });
 
-  testWidgets('reports native load progress and legacy loading state', (
+  testServoWidgets('reports native load progress and legacy loading state', (
     tester,
   ) async {
     final progress = <FlutterServoLoadProgress>[];
@@ -699,7 +704,7 @@ void main() {
     expect(loading, [true, true, false]);
   });
 
-  testWidgets('does not steal focus on reload or pointer hover', (
+  testServoWidgets('does not steal focus on reload or pointer hover', (
     tester,
   ) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -760,7 +765,7 @@ void main() {
     expect(addressFocusNode.hasFocus, isTrue);
   });
 
-  testWidgets('leaves animated frame pumping to the native renderer', (
+  testServoWidgets('leaves animated frame pumping to the native renderer', (
     tester,
   ) async {
     var refreshAttempts = 0;
@@ -799,7 +804,7 @@ void main() {
     expect(refreshAttempts, 1);
   });
 
-  testWidgets('debounces texture resize to the settled dimensions', (
+  testServoWidgets('debounces texture resize to the settled dimensions', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -859,4 +864,12 @@ void main() {
     expect(resizeCalls, hasLength(1));
     expect(resizeCalls.single.arguments, [400, 100]);
   });
+}
+
+void testServoWidgets(String description, WidgetTesterCallback callback) {
+  testWidgets(
+    description,
+    callback,
+    variant: TargetPlatformVariant({TargetPlatform.linux}),
+  );
 }

@@ -6,6 +6,11 @@ import 'package:code_assets/code_assets.dart';
 void main(List<String> args) async {
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
+    // Mobile uses the OS WebView and has no Rust symbols to bundle.
+    if (input.config.code.targetOS == OS.android ||
+        input.config.code.targetOS == OS.iOS) {
+      return;
+    }
     final crate = input.packageRoot.resolve('rust/');
     output.dependencies.addAll([
       crate.resolve('Cargo.toml'),

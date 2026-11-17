@@ -475,9 +475,15 @@ class _BrowserIdentity extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 9),
-            const Text(
-              'SERVO',
-              style: TextStyle(fontWeight: FontWeight.w800, letterSpacing: 1.8),
+            Text(
+              resolveFlutterServoBackend(FlutterServoBackend.auto) ==
+                      FlutterServoBackend.webview
+                  ? 'WEBVIEW'
+                  : 'SERVO',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.8,
+              ),
             ),
             if (constraints.maxWidth >= 350) ...[
               const SizedBox(width: 10),
@@ -780,7 +786,7 @@ class _BrowserViewport extends StatelessWidget {
               child: ColoredBox(
                 color: const Color(0xFF10171E),
                 child: Center(
-                  child: Padding(
+                  child: SingleChildScrollView(
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
@@ -886,7 +892,7 @@ class _BrowserStatus extends StatelessWidget {
           Expanded(
             child: Text(
               isLoading
-                  ? 'Servo is painting a new frame'
+                  ? 'Loading page'
                   : (host?.isNotEmpty ?? false)
                   ? host!
                   : 'Local document',
