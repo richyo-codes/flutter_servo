@@ -62,8 +62,8 @@ release setting are configured.
 
 Use an archive built from the same commit as your `flutter_servo` dependency.
 Check `BUILD_INFO.txt` after extraction and verify the archive against its
-`.sha256` file before use. Linux builds target Ubuntu 24.04 and require
-compatible system libraries. The Windows archive includes the matching ANGLE
+`.sha256` file before use. Linux builds use GitHub's `ubuntu-latest` runner and
+require compatible system libraries. The Windows archive includes the matching ANGLE
 DLLs. Flutter still builds the small desktop plugin and application runner.
 
 Set the extracted directory in your application's `pubspec.yaml`:
