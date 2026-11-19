@@ -1,0 +1,112 @@
+name: Servo Native Assets
+
+on:
+  push:
+    tags: ['native-v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            platform: linux-x64
+            target: x86_64-unknown-linux-gnu
+          - runner: windows-2022
+            platform: windows-x64
+            target: x86_64-pc-windows-msvc
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_BUILD_JOBS: 2
+      TARGET: ${{ matrix.target }}
+      ARTIFACT: flutter-servo-native-${{ matrix.platform }}-${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: native-${{ matrix.target }}-${{ hashFiles('packages/flutter_servo/rust/Cargo.lock') }}
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libclang-dev llvm-dev lld cmake ninja-build \
+            pkg-config libgtk-3-dev libepoxy-dev libgbm-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libdbus-1-dev libfreetype6-dev libharfbuzz-dev libfontconfig1-dev libudev-dev \
+            libunwind-dev libx11-dev libxmu-dev xorg-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            liblzma-dev libssl-dev libsecret-1-dev libmimalloc-dev gperf m4 nasm xvfb
+          uv python install 3.11
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - uses: subosito/flutter-action@v2
+        if: runner.os == 'Windows'
+        with:
+          channel: stable
+      - uses: KyleMayes/install-llvm-action@v2
+        if: runner.os == 'Windows'
+        with:
+          version: '20.1'
+          directory: ${{ runner.temp }}/llvm
+      - name: Build Linux native library
+        if: runner.os == 'Linux'
+        working-directory: packages/flutter_servo/rust
+        run: cargo build --locked --release --features servo-engine --target "$TARGET" --target-dir "$RUNNER_TEMP/servo-native"
+      - name: Build Windows native library
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:LIBCLANG_PATH = Join-Path $env:LLVM_PATH 'bin'
+          ./tools/setup_windows.ps1
+          Set-Location packages/flutter_servo/rust
+          cargo build --locked --release --features servo-engine --target $env:TARGET --target-dir "$env:RUNNER_TEMP/servo-native"
+      - name: Package and check native libraries
+        shell: bash
+        run: bash tools/package_native_assets.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/native-v') && vars.BROWSER_LICENSE != '' && vars.BROWSER_LICENSE != 'LicenseRef-Unspecified'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: flutter-servo-native-*
+          path: release-assets
+          merge-multiple: true
+      - name: Publish native release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^native-v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$ ]]; then
+            echo "Expected a native-v semantic version tag" >&2
+            exit 1
+          fi
+          if grep -q '^TODO:' packages/flutter_servo/LICENSE; then
+            echo "Set the package license before publishing native binaries" >&2
+            exit 1
+          fi
+          test "$(gh api "repos/$GH_REPO/commits/$GITHUB_REF_NAME" --jq .sha)" = "$GITHUB_SHA"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --latest=false release-assets/*

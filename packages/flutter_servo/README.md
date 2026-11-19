@@ -52,6 +52,37 @@ not support cross-display export and will fall back to CPU transfer in the app.
 
 ## Development
 
+### Precompiled Servo libraries
+
+The **Servo Native Assets** GitHub Actions workflow builds optimized Linux x64
+and Windows x64 libraries. Run it manually to get workflow artifacts for a
+commit. A `native-vX.Y.Z` tag publishes the archives and SHA-256 checksums under
+GitHub Releases once the package license and repository's `BROWSER_LICENSE`
+release setting are configured.
+
+Use an archive built from the same commit as your `flutter_servo` dependency.
+Check `BUILD_INFO.txt` after extraction and verify the archive against its
+`.sha256` file before use. Linux builds target Ubuntu 24.04 and require
+compatible system libraries. The Windows archive includes the matching ANGLE
+DLLs. Flutter still builds the small desktop plugin and application runner.
+
+Set the extracted directory in your application's `pubspec.yaml`:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_servo:
+      prebuilt_native_directory: /absolute/path/to/extracted/archive
+```
+
+The hook bundles the libraries without running Cargo. Omit the setting for a
+source build. Android and iOS continue using the OS WebView.
+
+The native-assets hook defaults to optimized Rust builds, including when Flutter
+is in debug mode. For Rust debugging only, the application's pubspec can override
+`hooks.user_defines.flutter_servo.rust_build_mode` to `debug`. Remove that override
+before measuring performance or packaging a release.
+
 Generate Rust bridge bindings from the repository root:
 
 ```bash

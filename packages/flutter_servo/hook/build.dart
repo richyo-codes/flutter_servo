@@ -11,6 +11,25 @@ void main(List<String> args) async {
         input.config.code.targetOS == OS.iOS) {
       return;
     }
+    final prebuiltDirectory = input.userDefines['prebuilt_native_directory'];
+    if (prebuiltDirectory != null) {
+      if (prebuiltDirectory is! String || prebuiltDirectory.trim().isEmpty) {
+        throw ArgumentError(
+          'prebuilt_native_directory must be a directory path.',
+        );
+      }
+      if (input.userDefines['rust_build_mode'] == 'debug') {
+        throw ArgumentError('Prebuilt native libraries are release builds.');
+      }
+      final directory = Directory(prebuiltDirectory);
+      if (!directory.isAbsolute) {
+        throw ArgumentError(
+          'prebuilt_native_directory must be an absolute path.',
+        );
+      }
+      bundlePrebuilt(input, output, directory);
+      return;
+    }
     final crate = input.packageRoot.resolve('rust/');
     output.dependencies.addAll([
       crate.resolve('Cargo.toml'),
@@ -37,6 +56,39 @@ void main(List<String> args) async {
       await bundleWindowsAngle(profile, input.packageName, output);
     }
   });
+}
+
+void bundlePrebuilt(
+  BuildInput input,
+  BuildOutputBuilder output,
+  Directory directory,
+) {
+  final target = input.config.code;
+  if (target.targetArchitecture != Architecture.x64) {
+    throw UnsupportedError('Prebuilt Servo libraries require an x64 target.');
+  }
+  final libraries = switch (target.targetOS) {
+    OS.linux => ['librust_lib_flutter_servo.so'],
+    OS.windows => ['rust_lib_flutter_servo.dll', 'libEGL.dll', 'libGLESv2.dll'],
+    _ => throw UnsupportedError(
+      'No prebuilt Servo library for ${target.targetOS}.',
+    ),
+  };
+  for (final (index, name) in libraries.indexed) {
+    final file = File.fromUri(directory.uri.resolve(name));
+    if (!file.existsSync()) {
+      throw StateError('Missing prebuilt native library: ${file.path}');
+    }
+    output.dependencies.add(file.uri);
+    output.assets.code.add(
+      CodeAsset(
+        package: input.packageName,
+        name: index == 0 ? 'src/rust/frb_generated.io.dart' : name,
+        linkMode: DynamicLoadingBundled(),
+        file: file.uri,
+      ),
+    );
+  }
 }
 
 Future<void> bundleWindowsAngle(
