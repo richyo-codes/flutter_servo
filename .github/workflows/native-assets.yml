@@ -45,8 +45,25 @@ jobs:
             pkg-config libgtk-3-dev libepoxy-dev libgbm-dev libegl1-mesa-dev libgles2-mesa-dev \
             libdbus-1-dev libfreetype6-dev libharfbuzz-dev libfontconfig1-dev libudev-dev \
             libunwind-dev libx11-dev libxmu-dev xorg-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            liblzma-dev libssl-dev libsecret-1-dev libmimalloc-dev gperf m4 nasm xvfb
+            liblzma-dev libssl-dev libsecret-1-dev libmimalloc-dev gperf m4 nasm xvfb curl ca-certificates
           uv python install 3.11
+      - name: Install pinned Linux Rust toolchain
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' packages/flutter_servo/rust/rust-toolchain.toml)"
+          test -n "$toolchain"
+          if ! command -v rustup >/dev/null; then
+            installer="$(mktemp)"
+            trap 'rm -f "$installer"' EXIT
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o "$installer"
+            sh "$installer" -y --profile minimal --default-toolchain none --no-modify-path
+            cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+            export PATH="$cargo_bin:$PATH"
+            echo "$cargo_bin" >> "$GITHUB_PATH"
+          fi
+          rustup toolchain install "$toolchain" --profile minimal --target "$TARGET"
+          rustup run "$toolchain" cargo --version
       - uses: ilammy/msvc-dev-cmd@v1
         if: runner.os == 'Windows'
         with:
@@ -63,7 +80,10 @@ jobs:
       - name: Build Linux native library
         if: runner.os == 'Linux'
         working-directory: packages/flutter_servo/rust
-        run: cargo build --locked --release --features servo-engine --target "$TARGET" --target-dir "$RUNNER_TEMP/servo-native"
+        run: |
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup run "$toolchain" cargo build --locked --release --features servo-engine --target "$TARGET" --target-dir "$RUNNER_TEMP/servo-native"
       - name: Build Windows native library
         if: runner.os == 'Windows'
         shell: pwsh
