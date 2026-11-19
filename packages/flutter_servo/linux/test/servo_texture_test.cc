@@ -1,8 +1,12 @@
 // Include the implementation to inspect publication without a display server.
 #include "../servo_texture.cc"
+#include "../navigation_state.h"
 
 #include <cstring>
 
+static unsigned captures = 0;
+static unsigned updates = 0;
+static bool update_succeeds = true;
 static unsigned uploads = 0;
 static unsigned released_frames = 0;
 static GLint gl_state[6] = {73, 91, 8, 100, 2, 3};
@@ -10,10 +14,12 @@ static const GLenum state_fields[] = {GL_TEXTURE_BINDING_2D,
     GL_PIXEL_UNPACK_BUFFER_BINDING, GL_UNPACK_ALIGNMENT, GL_UNPACK_ROW_LENGTH,
     GL_UNPACK_SKIP_ROWS, GL_UNPACK_SKIP_PIXELS};
 
-ServoSharedFrame* servo_shared_frame_capture(EGLDisplay, uint32_t, uint32_t) {
-  return nullptr;
+ServoSharedFrame* servo_shared_frame_capture(EGLDisplay display, uint32_t width, uint32_t height) {
+  captures++;
+  return new ServoSharedFrame{display, EGL_NO_IMAGE_KHR, width, height};
 }
 bool servo_shared_frame_copy(ServoSharedFrame*, GLuint) { return false; }
+bool servo_shared_frame_update(ServoSharedFrame*) { updates++; return update_succeeds; }
 void servo_shared_frame_free(ServoSharedFrame* frame) { delete frame; }
 
 static void assert_upload_state() {
@@ -164,8 +170,49 @@ static void owned_frames_live_until_replaced() {
   g_object_unref(texture);
 }
 
+static void shared_storage_reused_until_resize() {
+  captures = updates = 0;
+  ServoTexture* texture = servo_texture_new(64, 64, "test");
+  g_assert_true(servo_texture_publish_current_frame(texture));
+  auto* first = texture->shared_frame;
+  for (int i = 0; i < 10; i++) {
+    g_assert_true(servo_texture_publish_current_frame(texture));
+    g_assert_true(texture->shared_frame == first);
+  }
+  g_assert_cmpuint(captures, ==, 1);
+  g_assert_cmpuint(updates, ==, 10);
+  servo_texture_resize(texture, 128, 96);
+  g_assert_true(servo_texture_publish_current_frame(texture));
+  g_assert_cmpuint(captures, ==, 2);
+  g_assert_cmpuint(texture->shared_frame->width, ==, 128);
+  update_succeeds = false;
+  g_test_expect_message(nullptr, G_LOG_LEVEL_WARNING, "*GPU export unavailable*");
+  g_assert_false(servo_texture_publish_current_frame(texture));
+  g_test_assert_expected_messages();
+  g_assert_false(texture->shared_enabled);
+  update_succeeds = true;
+  g_object_unref(texture);
+}
+
+static void navigation_only_notifies_changes() {
+  ServoNavigationState state{};
+  g_assert_true(state.update("", false, false));
+  g_assert_false(state.update("", false, false));
+  g_assert_true(state.update("https://example.org", false, false));
+  for (int i = 0; i < 100; i++)
+    g_assert_false(state.update("https://example.org", false, false));
+  g_assert_true(state.update("https://example.org", true, false));
+  g_assert_true(state.update("https://example.org", true, true));
+  state.clear();
+  g_assert_true(state.update("https://example.org", true, true));
+  state.clear();
+  state.clear();
+}
+
 int main(int argc, char** argv) {
   g_test_init(&argc, &argv, nullptr);
+  g_test_add_func("/servo/navigation/deduplicate", navigation_only_notifies_changes);
+  g_test_add_func("/servo/texture/reuse-shared-storage", shared_storage_reused_until_resize);
   g_test_add_func("/servo/texture/import-fallback", failed_import_requests_fallback);
   g_test_add_func("/servo/texture/resize-publication",
                   resize_preserves_published_frame);

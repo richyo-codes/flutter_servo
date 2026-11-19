@@ -9,6 +9,57 @@
 #define EGL_DRM_RENDER_NODE_FILE_EXT 0x3377
 #endif
 
+static bool supports_fences(EGLDisplay display) {
+  return epoxy_has_egl_extension(display, "EGL_ANDROID_native_fence_sync") &&
+      epoxy_has_egl_extension(display, "EGL_KHR_fence_sync") &&
+      epoxy_has_egl_extension(display, "EGL_KHR_wait_sync");
+}
+
+static void close_fence(int& fd) {
+  if (fd >= 0) close(fd);
+  fd = -1;
+}
+
+static void signal_fence(ServoSharedFrame* frame, int& fd) {
+  close_fence(fd);
+  if (frame->native_fences) {
+    EGLDisplay display = eglGetCurrentDisplay();
+    EGLSyncKHR sync = eglCreateSyncKHR(display, EGL_SYNC_NATIVE_FENCE_ANDROID, nullptr);
+    if (sync != EGL_NO_SYNC_KHR) {
+      glFlush();
+      fd = eglDupNativeFenceFDANDROID(display, sync);
+      eglDestroySyncKHR(display, sync);
+      if (fd >= 0) return;
+    }
+  }
+  // Drivers without exportable fences must complete this context's work before
+  // another context accesses the allocation. Never silently omit ordering.
+  glFinish();
+}
+
+static bool wait_fence(int& fd) {
+  if (fd < 0) return true;
+  EGLDisplay display = eglGetCurrentDisplay();
+  const EGLint attrs[] = {EGL_SYNC_NATIVE_FENCE_FD_ANDROID, fd, EGL_NONE};
+  EGLSyncKHR sync = eglCreateSyncKHR(display, EGL_SYNC_NATIVE_FENCE_ANDROID, attrs);
+  fd = -1;  // EGL takes ownership of the descriptor.
+  if (sync == EGL_NO_SYNC_KHR) return false;
+  const bool waited = eglWaitSyncKHR(display, sync, 0) == EGL_TRUE;
+  eglDestroySyncKHR(display, sync);
+  return waited;
+}
+
+static ServoSharedFrame* make_frame(EGLDisplay producer, EGLDisplay consumer,
+    EGLImageKHR source, EGLImageKHR destination, uint32_t width, uint32_t height) {
+  auto* frame = new ServoSharedFrame{consumer, destination, width, height};
+  frame->producer_display = producer;
+  frame->producer_context = eglGetCurrentContext();
+  frame->producer_image = source;
+  frame->native_fences = supports_fences(producer) && supports_fences(consumer);
+  signal_fence(frame, frame->ready_fd);
+  return frame;
+}
+
 static ServoSharedFrame* capture_linear_dmabuf(EGLDisplay producer,
     EGLDisplay consumer, uint32_t width, uint32_t height) {
   if (!epoxy_has_egl_extension(EGL_NO_DISPLAY, "EGL_EXT_device_query") ||
@@ -62,7 +113,6 @@ static ServoSharedFrame* capture_linear_dmabuf(EGLDisplay producer,
     glDisable(GL_SCISSOR_TEST);
     if (glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE) {
       glBlitFramebuffer(0, 0, width, height, 0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-      glFinish();
       copied = glGetError() == GL_NO_ERROR;
     }
     if (scissor) glEnable(GL_SCISSOR_TEST);
@@ -71,7 +121,6 @@ static ServoSharedFrame* capture_linear_dmabuf(EGLDisplay producer,
     glDeleteFramebuffers(1, &framebuffer);
     glDeleteTextures(1, &texture);
   }
-  if (source != EGL_NO_IMAGE_KHR) eglDestroyImageKHR(producer, source);
   if (fd >= 0) close(fd);
   if (buffer) gbm_bo_destroy(buffer);
   if (gbm) gbm_device_destroy(gbm);
@@ -80,9 +129,10 @@ static ServoSharedFrame* capture_linear_dmabuf(EGLDisplay producer,
     g_warning("flutter_servo: linear DMA-BUF capture failed: allocation=%d source=%d destination=%d EGL=0x%x GL=0x%x",
         fd >= 0, source != EGL_NO_IMAGE_KHR, destination != EGL_NO_IMAGE_KHR, eglGetError(), glGetError());
     if (destination != EGL_NO_IMAGE_KHR) eglDestroyImageKHR(consumer, destination);
+    if (source != EGL_NO_IMAGE_KHR) eglDestroyImageKHR(producer, source);
     return nullptr;
   }
-  return new ServoSharedFrame{consumer, destination, width, height};
+  return make_frame(producer, consumer, source, destination, width, height);
 }
 
 ServoSharedFrame* servo_shared_frame_capture(EGLDisplay consumer_display,
@@ -120,9 +170,6 @@ ServoSharedFrame* servo_shared_frame_capture(EGLDisplay consumer_display,
       ? eglCreateImageKHR(producer_display, context, EGL_GL_TEXTURE_2D_KHR,
           reinterpret_cast<EGLClientBuffer>(static_cast<uintptr_t>(texture)), attributes)
       : EGL_NO_IMAGE_KHR;
-  // Completion is explicit at this first implementation boundary. Replace this
-  // with native fence FD transfer once the producer/consumer path is validated.
-  glFinish();
   glBindBuffer(GL_PIXEL_UNPACK_BUFFER, previous_unpack_buffer);
   glBindTexture(GL_TEXTURE_2D, previous_texture);
   glDeleteTextures(1, &texture);
@@ -131,12 +178,52 @@ ServoSharedFrame* servo_shared_frame_capture(EGLDisplay consumer_display,
     return nullptr;
   }
 
-  return new ServoSharedFrame{consumer_display, image, width, height};
+  return make_frame(producer_display, consumer_display, image, image, width, height);
+}
+
+bool servo_shared_frame_update(ServoSharedFrame* frame) {
+  if (eglGetCurrentDisplay() != frame->producer_display ||
+      eglGetCurrentContext() != frame->producer_context ||
+      !epoxy_has_gl_extension("GL_OES_EGL_image") ||
+      !wait_fence(frame->release_fd)) return false;
+  // A skipped Flutter frame needs no wait: successive writes use the same
+  // producer context. The next ready fence covers all preceding writes.
+  GLint old_texture = 0, old_draw = 0;
+  glGetIntegerv(GL_TEXTURE_BINDING_2D, &old_texture);
+  glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
+  GLuint texture = 0, framebuffer = 0;
+  glGenTextures(1, &texture);
+  glBindTexture(GL_TEXTURE_2D, texture);
+  glEGLImageTargetTexture2DOES(GL_TEXTURE_2D, frame->producer_image);
+  glGenFramebuffers(1, &framebuffer);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, framebuffer);
+  glFramebufferTexture2D(GL_DRAW_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+  const bool scissor = glIsEnabled(GL_SCISSOR_TEST);
+  glDisable(GL_SCISSOR_TEST);
+  bool complete = glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER) == GL_FRAMEBUFFER_COMPLETE;
+  if (complete) {
+    glBlitFramebuffer(0, 0, frame->width, frame->height, 0, 0, frame->width,
+        frame->height, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    complete = glGetError() == GL_NO_ERROR;
+    signal_fence(frame, frame->ready_fd);
+  }
+  if (scissor) glEnable(GL_SCISSOR_TEST);
+  glBindFramebuffer(GL_DRAW_FRAMEBUFFER, old_draw);
+  glBindTexture(GL_TEXTURE_2D, old_texture);
+  glDeleteFramebuffers(1, &framebuffer);
+  glDeleteTextures(1, &texture);
+  return complete;
 }
 
 bool servo_shared_frame_copy(ServoSharedFrame* frame, GLuint destination) {
+  const EGLContext context = eglGetCurrentContext();
   if (eglGetCurrentDisplay() != frame->display ||
-      !epoxy_has_gl_extension("GL_OES_EGL_image")) return false;
+      context == EGL_NO_CONTEXT ||
+      (frame->consumer_context != EGL_NO_CONTEXT && frame->consumer_context != context) ||
+      !epoxy_has_gl_extension("GL_OES_EGL_image") ||
+      !wait_fence(frame->ready_fd)) return false;
+  // Replacing a release fence is safe only for ordered reads in one context.
+  frame->consumer_context = context;
   GLint old_read = 0, old_draw = 0, old_texture = 0;
   glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &old_read);
   glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &old_draw);
@@ -158,8 +245,8 @@ bool servo_shared_frame_copy(ServoSharedFrame* frame, GLuint destination) {
     // Match read_to_image's vertical flip, without reading pixels to the CPU.
     glBlitFramebuffer(0, 0, frame->width, frame->height,
         0, frame->height, frame->width, 0, GL_COLOR_BUFFER_BIT, GL_NEAREST);
-    glFinish();
     complete = glGetError() == GL_NO_ERROR;
+    signal_fence(frame, frame->release_fd);
   }
   if (scissor) glEnable(GL_SCISSOR_TEST);
   glBindFramebuffer(GL_READ_FRAMEBUFFER, old_read);
@@ -172,6 +259,10 @@ bool servo_shared_frame_copy(ServoSharedFrame* frame, GLuint destination) {
 
 void servo_shared_frame_free(ServoSharedFrame* frame) {
   if (!frame) return;
+  close_fence(frame->ready_fd);
+  close_fence(frame->release_fd);
+  if (frame->producer_image != frame->image)
+    eglDestroyImageKHR(frame->producer_display, frame->producer_image);
   eglDestroyImageKHR(frame->display, frame->image);
   delete frame;
 }

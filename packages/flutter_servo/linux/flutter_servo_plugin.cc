@@ -10,6 +10,7 @@
 
 #include "rust_render_bridge.h"
 #include "servo_texture.h"
+#include "navigation_state.h"
 
 #define FLUTTER_SERVO_PLUGIN(obj) \
   (G_TYPE_CHECK_INSTANCE_CAST((obj), flutter_servo_plugin_get_type(), \
@@ -30,6 +31,7 @@ struct _FlutterServoPlugin {
   int wake_fd;
   int load_progress;
   bool has_frame;
+  ServoNavigationState navigation_state;
 };
 
 G_DEFINE_TYPE(FlutterServoPlugin, flutter_servo_plugin, g_object_get_type())
@@ -143,6 +145,10 @@ static void send_navigation_state_changed(FlutterServoPlugin* self) {
   if (!rust_render_bridge_get_navigation_state(
           self->rust_render_bridge, self->session, url, sizeof(url),
           &can_go_back, &can_go_forward)) {
+    return;
+  }
+
+  if (!self->navigation_state.update(url, can_go_back, can_go_forward)) {
     return;
   }
 
@@ -473,6 +479,7 @@ static FlMethodResponse* handle_create_texture(FlutterServoPlugin* self,
     g_message("flutter_servo: linux plugin resizing existing texture to %ux%u", width, height);
     servo_texture_resize(self->texture, width, height);
   }
+  self->navigation_state.clear();
   if (self->has_frame) {
     // A newly mounted Dart surface has its own readiness state. Keep the last
     // published page visible and replay readiness rather than replacing it.
@@ -740,6 +747,7 @@ static void flutter_servo_plugin_dispose(GObject* object) {
   g_clear_pointer(&self->http_proxy_uri, g_free);
   g_clear_pointer(&self->https_proxy_uri, g_free);
   g_clear_pointer(&self->no_proxy, g_free);
+  self->navigation_state.clear();
   g_clear_object(&self->texture_registrar);
   G_OBJECT_CLASS(flutter_servo_plugin_parent_class)->dispose(object);
 }
@@ -761,6 +769,7 @@ static void flutter_servo_plugin_init(FlutterServoPlugin* self) {
   self->wake_source_id = 0;
   self->wake_fd = -1;
   self->load_progress = -1;
+  self->navigation_state = {};
 }
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,

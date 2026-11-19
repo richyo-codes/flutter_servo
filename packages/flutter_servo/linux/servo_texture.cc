@@ -216,14 +216,20 @@ bool servo_texture_wants_shared_frame(ServoTexture* self) {
 
 bool servo_texture_publish_current_frame(ServoTexture* self) {
   const ScopedMutexLock lock(&self->buffer_mutex);
-  auto* frame = servo_shared_frame_capture(self->consumer_display, self->width, self->height);
+  const bool reuse = self->shared_frame &&
+      self->shared_frame->display == self->consumer_display &&
+      self->shared_frame->width == self->width &&
+      self->shared_frame->height == self->height;
+  auto* frame = reuse
+      ? (servo_shared_frame_update(self->shared_frame) ? self->shared_frame : nullptr)
+      : servo_shared_frame_capture(self->consumer_display, self->width, self->height);
   if (!frame) {
     self->shared_enabled = false;
     g_warning("flutter_servo: GPU export unavailable; using CPU frame transfer");
     return false;
   }
   if (!self->shared_frame) g_message("flutter_servo: using shared EGL/DMA-BUF frames");
-  servo_shared_frame_free(self->shared_frame);
+  if (!reuse) servo_shared_frame_free(self->shared_frame);
   self->shared_frame = frame;
   g_clear_pointer(&self->published_bytes, g_bytes_unref);
   self->front_width = self->width;

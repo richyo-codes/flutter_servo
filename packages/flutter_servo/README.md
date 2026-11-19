@@ -42,9 +42,13 @@ a synthetic webpage skeleton.
 
 An experimental `FLUTTER_SERVO_GPU_TEXTURES=1` path shares EGL images, using
 linear GBM DMA-BUFs across displays, with CPU transfer as fallback. Linux builds
-require the GBM development package. This path still copies on the GPU and uses
-blocking synchronization; it is not zero-copy. Standalone GPU probes pass, but
-the tested GTK4 application selects llvmpipe and falls back to CPU transfer.
+require the GBM development package. Same-size frames reuse EGL/GBM storage;
+native fence FDs order producer writes and consumer reads without CPU waits
+where supported. Drivers without fence export retain blocking synchronization.
+This path still copies on the GPU; it is not zero-copy. Run
+`bash tools/run_shared_frame_probe.sh` from the repository root to check
+same-display and cross-display transfers on your driver. Software rendering may
+not support cross-display export and will fall back to CPU transfer in the app.
 
 ## Development
 

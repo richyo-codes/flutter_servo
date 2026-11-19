@@ -23,8 +23,3 @@ flutter:
   uses-material-design: true
   assets:
     - assets/demos/
-
-hooks:
-  user_defines:
-    flutter_servo:
-      rust_build_mode: debug

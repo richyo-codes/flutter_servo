@@ -30,9 +30,12 @@ int main(int argc, char** argv) {
   std::printf("producer: %s\n", glGetString(GL_RENDERER));
   eglMakeCurrent(consumer, EGL_NO_SURFACE, EGL_NO_SURFACE, consumer_context);
   std::printf("consumer: %s\n", glGetString(GL_RENDERER));
-  for (int sample = 0; sample < 12; sample++) {
-    const int width = sample < 2 ? 17 + sample * 14 : (sample % 2 ? 832 : 800);
-    const int height = sample < 2 ? 29 - sample * 16 : (sample % 2 ? 640 : 600);
+  ServoSharedFrame* frame = nullptr;
+  unsigned reused = 0;
+  for (int sample = 0; sample < 120; sample++) {
+    const int width = sample < 2 ? 17 + sample * 14 : (sample / 20 % 2 ? 832 : 800);
+    const int height = sample < 2 ? 29 - sample * 16 : (sample / 20 % 2 ? 640 : 600);
+    const bool green = sample % 2;
     if (!eglMakeCurrent(producer, EGL_NO_SURFACE, EGL_NO_SURFACE, producer_context)) return 4;
     GLuint source = 0, framebuffer = 0;
     glGenTextures(1, &source);
@@ -45,7 +48,7 @@ int main(int argc, char** argv) {
     glClear(GL_COLOR_BUFFER_BIT);
     glEnable(GL_SCISSOR_TEST);
     glScissor(0, height / 2, width, height - height / 2);
-    glClearColor(1, 0, 0, 1);
+    glClearColor(1, green ? 1 : 0, 0, 1);
     glClear(GL_COLOR_BUFFER_BIT);
     glDisable(GL_SCISSOR_TEST);
     // An undersized upload buffer must not affect allocation-only capture.
@@ -53,7 +56,17 @@ int main(int argc, char** argv) {
     glGenBuffers(1, &unpack_buffer);
     glBindBuffer(GL_PIXEL_UNPACK_BUFFER, unpack_buffer);
     glBufferData(GL_PIXEL_UNPACK_BUFFER, 1, nullptr, GL_STATIC_DRAW);
-    ServoSharedFrame* frame = servo_shared_frame_capture(consumer, width, height);
+    if (frame && frame->width == static_cast<uint32_t>(width) &&
+        frame->height == static_cast<uint32_t>(height)) {
+      const EGLImageKHR storage = frame->image;
+      if (!servo_shared_frame_update(frame) || frame->image != storage) return 11;
+      reused++;
+    } else {
+      servo_shared_frame_free(frame);
+      frame = servo_shared_frame_capture(consumer, width, height);
+      if (frame) std::printf("synchronization: %s\n",
+          frame->native_fences ? "native fence FD" : "blocking fallback");
+    }
     if (!frame) { std::fprintf(stderr, "GPU export failed\n"); return 5; }
     GLint restored_unpack = 0, restored_texture = 0, restored_framebuffer = 0;
     glGetIntegerv(GL_PIXEL_UNPACK_BUFFER_BINDING, &restored_unpack);
@@ -72,6 +85,8 @@ int main(int argc, char** argv) {
     glClear(GL_COLOR_BUFFER_BIT);
     glDeleteFramebuffers(1, &framebuffer);
     glDeleteTextures(1, &source);
+    // Simulate the producer outrunning Flutter's raster callback.
+    if (sample % 3 == 0) continue;
     if (!eglMakeCurrent(consumer, EGL_NO_SURFACE, EGL_NO_SURFACE, consumer_context)) return 6;
     GLuint destination = 0;
     glGenTextures(1, &destination);
@@ -96,13 +111,18 @@ int main(int argc, char** argv) {
     }
     glDisable(GL_SCISSOR_TEST);
     glDeleteFramebuffers(2, sentinel_framebuffers);
-    servo_shared_frame_free(frame);
+    if (sample % 5 == 0) {
+      // Do not synchronize with readback: the next producer update must wait
+      // on the consumer's release fence while this copy is still in flight.
+      glDeleteTextures(1, &destination);
+      continue;
+    }
     glGenFramebuffers(1, &framebuffer);
     glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, destination, 0);
     std::vector<unsigned char> pixels(width * height * 4);
     glReadPixels(0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    if (pixels[0] != 255 || pixels[1] != 0 || pixels[2] != 0 ||
+    if (pixels[0] != 255 || pixels[1] != (green ? 255 : 0) || pixels[2] != 0 ||
         pixels[pixels.size() - 4] != 0 || pixels[pixels.size() - 2] != 255) {
       std::fprintf(stderr, "GPU pixel/orientation mismatch sample=%d top=%u,%u,%u bottom=%u,%u,%u\n",
           sample, pixels[0], pixels[1], pixels[2], pixels[pixels.size()-4],
@@ -111,11 +131,13 @@ int main(int argc, char** argv) {
     glDeleteFramebuffers(1, &framebuffer);
     glDeleteTextures(1, &destination);
   }
+  servo_shared_frame_free(frame);
+  if (reused < 100) return 12;
   eglMakeCurrent(consumer, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
   eglDestroyContext(consumer, consumer_context);
   eglDestroyContext(producer, producer_context);
   if (cross_display) eglTerminate(consumer);
   eglTerminate(producer);
-  std::printf("GPU sharing passed: %s, 12 frames, resize, orientation, immutable storage, GL state\n",
+  std::printf("GPU sharing passed: %s, 120 frames, reuse, skipped frames, resize, orientation, GL state\n",
       cross_display ? "cross-display DMA-BUF" : "same-display EGLImage");
 }
