@@ -14,10 +14,12 @@ mod imp {
     use std::rc::Rc;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
-        Arc,
+        Arc, OnceLock,
     };
+    use std::time::Instant;
 
     use dpi::PhysicalSize;
+    use gleam::gl;
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
     use servo::{DeviceIntPoint, DeviceIntRect, DeviceIntSize};
     use servo::{
@@ -29,6 +31,17 @@ mod imp {
     use url::Url;
 
     use super::{c_char, c_string, c_void, slice, BYTES_PER_PIXEL};
+
+    fn log_elapsed_ms() -> u128 {
+        static START: OnceLock<Instant> = OnceLock::new();
+        START.get_or_init(Instant::now).elapsed().as_millis()
+    }
+
+    macro_rules! render_log {
+        ($($arg:tt)*) => {
+            eprintln!("[+{} ms] {}", log_elapsed_ms(), format_args!($($arg)*))
+        };
+    }
 
     #[derive(Clone)]
     enum SessionContent {
@@ -132,7 +145,7 @@ mod imp {
             if self.crashed.get() {
                 return;
             }
-            eprintln!("flutter_servo: rust delegate load status {status:?}");
+            render_log!("flutter_servo: rust delegate load status {status:?}");
             if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete) {
                 self.document_ready.set(true);
             }
@@ -144,7 +157,7 @@ mod imp {
         }
 
         fn notify_crashed(&self, _webview: WebView, reason: String, backtrace: Option<String>) {
-            eprintln!("flutter_servo: Servo page crashed: {reason}");
+            render_log!("flutter_servo: Servo page crashed: {reason}");
             if let Some(backtrace) = backtrace {
                 eprintln!("{backtrace}");
             }
@@ -173,15 +186,15 @@ mod imp {
 
     impl ServoRenderSession {
         fn new(proxy_overrides: ProxyOverrides) -> Result<Self, String> {
-            eprintln!("flutter_servo: rust session new start");
+            render_log!("flutter_servo: rust session new start");
             let size = PhysicalSize::new(800, 600);
-            eprintln!("flutter_servo: rust session creating rendering context");
+            render_log!("flutter_servo: rust session creating rendering context");
             let rendering_context: Rc<dyn RenderingContext> =
                 if std::env::var("FLUTTER_SERVO_GPU_TEXTURES").as_deref() == Ok("1") {
                     match crate::gpu_context::GpuContext::new(size) {
                         Ok(context) => Rc::new(context),
                         Err(error) => {
-                            eprintln!("flutter_servo: hardware context unavailable: {error:?}");
+                            render_log!("flutter_servo: hardware context unavailable: {error:?}");
                             Rc::new(
                                 SoftwareRenderingContext::new(size)
                                     .map_err(|error| format!("rendering init failed: {error:?}"))?,
@@ -194,10 +207,17 @@ mod imp {
                             .map_err(|error| format!("rendering init failed: {error:?}"))?,
                     )
                 };
-            eprintln!("flutter_servo: rust session making rendering context current");
+            render_log!("flutter_servo: rust session making rendering context current");
             rendering_context
                 .make_current()
                 .map_err(|error| format!("software rendering activation failed: {error:?}"))?;
+            let gl = rendering_context.gleam_gl_api();
+            render_log!(
+                "flutter_servo: Servo graphics vendor={:?} renderer={:?} version={:?}",
+                gl.get_string(gl::VENDOR),
+                gl.get_string(gl::RENDERER),
+                gl.get_string(gl::VERSION),
+            );
 
             let mut preferences = Preferences::default();
             if let Some(http_proxy_uri) = proxy_overrides.http_proxy_uri {
@@ -210,7 +230,7 @@ mod imp {
                 preferences.network_http_no_proxy = no_proxy;
             }
 
-            eprintln!("flutter_servo: rust session building Servo");
+            render_log!("flutter_servo: rust session building Servo");
             let wake_pending = Arc::new(AtomicBool::new(true));
             let wake_callback = Arc::new(crate::wake_callback::WakeCallback::default());
             #[cfg(target_os = "linux")]
@@ -471,21 +491,21 @@ mod imp {
             let height = height.max(1);
 
             if !self.prepare_for_render(width, height) {
-                eprintln!("flutter_servo: rust render prepare failed");
+                render_log!("flutter_servo: rust render prepare failed");
                 return false;
             }
 
             if let Some(servo) = self.servo.as_ref() {
                 servo.spin_event_loop();
             } else {
-                eprintln!("flutter_servo: rust render missing Servo event loop");
+                render_log!("flutter_servo: rust render missing Servo event loop");
                 return false;
             }
 
             if let Some(webview) = self.webview.as_ref() {
                 webview.paint();
             } else {
-                eprintln!("flutter_servo: rust render missing webview");
+                render_log!("flutter_servo: rust render missing webview");
                 return false;
             }
 
@@ -508,11 +528,11 @@ mod imp {
                 DeviceIntSize::new(width as i32, height as i32),
             );
             let Some(rendering_context) = self.rendering_context.as_ref() else {
-                eprintln!("flutter_servo: rust render missing rendering context");
+                render_log!("flutter_servo: rust render missing rendering context");
                 return None;
             };
             let Some(image) = rendering_context.read_to_image(source_rectangle) else {
-                eprintln!("flutter_servo: rust render framebuffer read failed");
+                render_log!("flutter_servo: rust render framebuffer read failed");
                 return None;
             };
             let gl = rendering_context.gleam_gl_api();
@@ -521,7 +541,7 @@ mod imp {
                 if error == 0 {
                     break;
                 }
-                eprintln!(
+                render_log!(
                     "flutter_servo: rust render cleared GL error after framebuffer read: {error}"
                 );
             }
@@ -544,7 +564,7 @@ mod imp {
             let height = height.max(1);
             let expected_len = width as usize * height as usize * BYTES_PER_PIXEL;
             if out_rgba.is_null() || out_len < expected_len {
-                eprintln!("flutter_servo: rust render rejected buffer");
+                render_log!("flutter_servo: rust render rejected buffer");
                 return false;
             }
             let Some(image) = self.render_image(width, height) else {
@@ -557,18 +577,18 @@ mod imp {
 
         fn prepare_for_render(&mut self, width: u32, height: u32) -> bool {
             let Some(rendering_context) = self.rendering_context.as_ref() else {
-                eprintln!("flutter_servo: rust render missing rendering context");
+                render_log!("flutter_servo: rust render missing rendering context");
                 return false;
             };
 
             if rendering_context.make_current().is_err() {
-                eprintln!("flutter_servo: rust render failed to make context current");
+                render_log!("flutter_servo: rust render failed to make context current");
                 return false;
             }
 
             let requested_size = PhysicalSize::new(width, height);
             if self.size != requested_size {
-                eprintln!("flutter_servo: rust render resizing webview to {width}x{height}");
+                render_log!("flutter_servo: rust render resizing webview to {width}x{height}");
                 if let Some(webview) = self.webview.as_ref() {
                     webview.resize(requested_size);
                 } else {
@@ -580,10 +600,10 @@ mod imp {
 
             if self.pending_navigation {
                 let Ok(url) = self.current_url() else {
-                    eprintln!("flutter_servo: rust render failed to resolve content URL");
+                    render_log!("flutter_servo: rust render failed to resolve content URL");
                     return false;
                 };
-                eprintln!("flutter_servo: rust render loading pending content");
+                render_log!("flutter_servo: rust render loading pending content");
                 if self.webview.is_none() || self.delegate.crashed.get() {
                     let Some(servo) = self.servo.as_ref() else {
                         return false;
@@ -602,7 +622,7 @@ mod imp {
                     self.delegate.begin_navigation();
                     webview.load(url);
                 } else {
-                    eprintln!("flutter_servo: rust render missing webview for navigation");
+                    render_log!("flutter_servo: rust render missing webview for navigation");
                     return false;
                 }
                 self.pending_navigation = false;
@@ -635,7 +655,7 @@ mod imp {
     impl Drop for ServoRenderSession {
         fn drop(&mut self) {
             self.wake_callback.set(None, null_mut());
-            eprintln!("flutter_servo: rust session shutdown start");
+            render_log!("flutter_servo: rust session shutdown start");
             self.delegate.controls.borrow_mut().reset();
             if let Some(context) = self.rendering_context.as_ref() {
                 // Flutter may have changed the current GL context since the last paint.
@@ -646,7 +666,7 @@ mod imp {
             // latency without proving its threads have stopped.
             let _ = self.servo.take();
             let _ = self.rendering_context.take();
-            eprintln!("flutter_servo: rust session shutdown complete");
+            render_log!("flutter_servo: rust session shutdown complete");
         }
     }
 
@@ -688,7 +708,7 @@ mod imp {
         https_proxy_uri: *const c_char,
         no_proxy: *const c_char,
     ) -> *mut c_void {
-        eprintln!("flutter_servo: ffi session_new invoked");
+        render_log!("flutter_servo: ffi session_new invoked");
         let proxy_overrides = ProxyOverrides {
             http_proxy_uri: optional_c_string(http_proxy_uri),
             https_proxy_uri: optional_c_string(https_proxy_uri),
@@ -696,15 +716,15 @@ mod imp {
         };
         match std::panic::catch_unwind(|| ServoRenderSession::new(proxy_overrides)) {
             Ok(Ok(session)) => {
-                eprintln!("flutter_servo: ffi session_new success");
+                render_log!("flutter_servo: ffi session_new success");
                 Box::into_raw(Box::new(session)).cast()
             }
             Ok(Err(error)) => {
-                eprintln!("flutter_servo: ffi session_new error: {error}");
+                render_log!("flutter_servo: ffi session_new error: {error}");
                 null_mut()
             }
             Err(_) => {
-                eprintln!("flutter_servo: ffi session_new panicked");
+                render_log!("flutter_servo: ffi session_new panicked");
                 null_mut()
             }
         }
@@ -1062,7 +1082,7 @@ mod imp {
             session.render_rgba(width, height, out_rgba, out_len)
         }))
         .unwrap_or_else(|_| {
-            eprintln!("flutter_servo: rust render panicked");
+            render_log!("flutter_servo: rust render panicked");
             false
         })
     }
