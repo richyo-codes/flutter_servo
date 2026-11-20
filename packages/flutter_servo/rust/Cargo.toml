@@ -40,6 +40,7 @@ url = { version = "2.5", optional = true }
 servo = { git = "https://github.com/richyo-codes/servo", rev = "18ead822e67b7660f7ee46cd03e6780940d7cc34", default-features = false, features = ["no-wgl"], optional = true }
 
 [patch.crates-io]
+mozangle = { path = "vendor/mozangle" }
 surfman = { git = "https://github.com/richyo-codes/surfman", rev = "0e2cd47b6390eefb6d0ecbb927a34bc03fc0f2cb" }
 
 [lints.rust]
