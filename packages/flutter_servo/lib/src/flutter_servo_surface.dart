@@ -46,6 +46,7 @@ class FlutterServoSurface extends StatefulWidget {
       onError = config.onError,
       loadTimeout = config.loadTimeout,
       reloadRevision = config.reloadRevision,
+      pageZoom = config.pageZoom,
       backend = config.backend;
 
   const FlutterServoSurface.url({
@@ -60,8 +61,10 @@ class FlutterServoSurface extends StatefulWidget {
     this.onError,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
+    this.pageZoom = 1.0,
     this.backend,
-  }) : contentType = FlutterServoContentType.url;
+  }) : assert(pageZoom >= 0.5 && pageZoom <= 3.0),
+       contentType = FlutterServoContentType.url;
 
   const FlutterServoSurface.html({
     super.key,
@@ -75,8 +78,10 @@ class FlutterServoSurface extends StatefulWidget {
     this.onError,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
+    this.pageZoom = 1.0,
     this.backend,
-  }) : contentType = FlutterServoContentType.html;
+  }) : assert(pageZoom >= 0.5 && pageZoom <= 3.0),
+       contentType = FlutterServoContentType.html;
 
   final FlutterServoContentType contentType;
   final String content;
@@ -93,6 +98,9 @@ class FlutterServoSurface extends StatefulWidget {
   /// Maximum wait for completion after native loading starts; null disables it.
   final Duration? loadTimeout;
   final int reloadRevision;
+
+  /// Desktop Servo page zoom, from 0.5 to 3.0. The OS WebView ignores this.
+  final double pageZoom;
   final FlutterServoBackend? backend;
 
   @override
@@ -117,8 +125,7 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
           widget.onError?.call(
             PlatformException(
               code: 'unsupported-backend',
-              message:
-                  'The requested browser backend is unavailable on this platform.',
+              message: 'The requested browser backend is unavailable on this platform.',
             ),
           );
         });
@@ -144,7 +151,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   static const Duration _deferredRefreshDelay = Duration(milliseconds: 32);
   static const Duration _refreshRetryDelay = Duration(milliseconds: 100);
   static const int _maxRefreshAttempts = 20;
-  static const Duration _resizeSyncDelay = Duration(milliseconds: 80);
+  static const Duration _resizeSyncDelay = Duration(milliseconds: 40);
   static final Set<_FlutterServoSurfaceState> _loadStateListeners = {};
 
   final FocusNode _focusNode = FocusNode(debugLabel: 'flutter_servo_surface');
@@ -153,6 +160,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   Size? _logicalSize;
   double? _devicePixelRatio;
   int? _textureWidth;
+  double? _appliedDisplayScale;
+  double? _appliedPageZoom;
   int? _textureHeight;
   bool _syncQueued = false;
   bool _textureSyncInFlight = false;
@@ -452,6 +461,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   @override
   void didUpdateWidget(covariant FlutterServoSurface oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.pageZoom != widget.pageZoom) _scheduleTextureSync();
     if (oldWidget.enableInputPlumbing && !widget.enableInputPlumbing) {
       _textInput.close();
       _focusNode.unfocus();
@@ -562,6 +572,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       );
       final dimensionsChanged =
           _textureWidth != width || _textureHeight != height;
+      final pageZoom = widget.pageZoom;
+      final scaleChanged =
+          _appliedDisplayScale != devicePixelRatio ||
+          _appliedPageZoom != pageZoom;
       if (_textureId != null &&
           dimensionsChanged &&
           (_resizeSyncTimer?.isActive ?? false)) {
@@ -572,13 +586,15 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       try {
         final hadTexture = _textureId != null;
         var textureId = _textureId;
-        if (textureId == null || dimensionsChanged) {
+        if (textureId == null || dimensionsChanged || scaleChanged) {
           textureId = await _channel.invokeMethod<int>(
             textureId == null ? 'createTexture' : 'resizeTexture',
-            [width, height],
+            [width, height, devicePixelRatio, pageZoom],
           );
           _textureWidth = width;
           _textureHeight = height;
+          _appliedDisplayScale = devicePixelRatio;
+          _appliedPageZoom = pageZoom;
         }
         if (!mounted) {
           return;
@@ -657,7 +673,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   }
 
   void _scheduleResizeSync() {
-    _resizeSyncTimer?.cancel();
+    if (_resizeSyncTimer?.isActive ?? false) return;
     _resizeSyncTimer = Timer(_resizeSyncDelay, () {
       _resizeSyncTimer = null;
       if (mounted) {

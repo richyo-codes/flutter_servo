@@ -176,7 +176,13 @@ private:
       return false;
     }
     bridge_->set_wake_callback(session_, WakeTarget::Notify, &wake_);
+    ApplyViewportScale();
     return true;
+  }
+
+  void ApplyViewportScale() {
+    if (bridge_->set_viewport_scale)
+      bridge_->set_viewport_scale(session_, display_scale_, page_zoom_);
   }
 
   void Shutdown() {
@@ -277,7 +283,7 @@ private:
 
     if (method == "createTexture" || method == "resizeTexture") {
       int32_t width = 0, height = 0;
-      if (!list || list->size() != 2 || !Integer((*list)[0], width) ||
+      if (!list || (list->size() != 2 && list->size() != 4) || !Integer((*list)[0], width) ||
           !Integer((*list)[1], height) || width < 1 || height < 1 ||
           width > 16384 || height > 16384 ||
           static_cast<int64_t>(width) * height > 64 * 1024 * 1024) {
@@ -288,6 +294,17 @@ private:
         result->Error("texture-missing",
                       "Create the texture before resizing it.");
         return;
+      }
+      if (list->size() == 4) {
+        const auto *scale = std::get_if<double>(&(*list)[2]);
+        const auto *zoom = std::get_if<double>(&(*list)[3]);
+        if (!scale || !zoom ||
+            !(*scale >= 0.5 && *scale <= 8.0 && *zoom >= 0.5 && *zoom <= 3.0)) {
+          invalid();
+          return;
+        }
+        display_scale_ = static_cast<float>(*scale);
+        page_zoom_ = static_cast<float>(*zoom);
       }
       width_ = static_cast<uint32_t>(width);
       height_ = static_cast<uint32_t>(height);
@@ -303,8 +320,10 @@ private:
           return;
         }
       }
-      if (session_)
+      if (session_) {
+        ApplyViewportScale();
         Pump(true);
+      }
       if (has_frame_)
         Notify("frameAvailable");
       result->Success(Value(texture_id_));
@@ -478,6 +497,7 @@ private:
   WakeTarget wake_;
   int64_t texture_id_ = -1;
   uint32_t width_ = 1, height_ = 1;
+  float display_scale_ = 1.0f, page_zoom_ = 1.0f;
   int progress_ = -1;
   int close_delegate_ = 0;
   bool has_frame_ = false, closing_ = false, animation_timer_ = false;

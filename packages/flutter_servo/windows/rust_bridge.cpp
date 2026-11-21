@@ -79,6 +79,10 @@ bool RustBridge::Load(std::string &error) {
   SERVO_SYMBOL(control_event_free, "control_event_free")
   SERVO_SYMBOL(control_response, "session_control_response")
 #undef SERVO_SYMBOL
+  const auto viewport_address =
+      GetProcAddress(module, "flutter_servo_session_set_viewport_scale");
+  static_assert(sizeof(set_viewport_scale) == sizeof(viewport_address));
+  std::memcpy(&set_viewport_scale, &viewport_address, sizeof(set_viewport_scale));
   // Keep one process-lifetime reference: Flutter's raster thread can release
   // Rust-owned frames after plugin teardown, and Servo has global worker state.
   module_ = module;

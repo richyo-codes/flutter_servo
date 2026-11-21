@@ -57,6 +57,7 @@ class _BrowserPageState extends State<BrowserPage> {
   String _content = FlutterServo.mvpInitialUrl();
   FlutterServoContentType _contentType = FlutterServoContentType.url;
   int _reloadRevision = 0;
+  int _zoomPercent = 100;
   bool _isLoading = false;
   PlatformException? _surfaceError;
   FlutterServoLoadProgress _loadProgress = FlutterServoLoadProgress.complete;
@@ -139,6 +140,14 @@ class _BrowserPageState extends State<BrowserPage> {
     );
   }
 
+  bool get _supportsZoom =>
+      resolveFlutterServoBackend(FlutterServoBackend.auto) ==
+      FlutterServoBackend.servo;
+
+  void _setZoom(int percent) {
+    setState(() => _zoomPercent = percent.clamp(50, 300));
+  }
+
   Map<ShortcutActivator, VoidCallback> get _browserShortcuts => {
     const SingleActivator(LogicalKeyboardKey.keyL, control: true):
         _focusAddressBar,
@@ -146,6 +155,27 @@ class _BrowserPageState extends State<BrowserPage> {
         _focusAddressBar,
     const SingleActivator(LogicalKeyboardKey.keyD, alt: true): _focusAddressBar,
     const SingleActivator(LogicalKeyboardKey.f6): _focusAddressBar,
+    if (_supportsZoom) ...{
+      const SingleActivator(LogicalKeyboardKey.equal, control: true): () =>
+          _setZoom(_zoomPercent + 10),
+      const SingleActivator(
+        LogicalKeyboardKey.equal,
+        control: true,
+        shift: true,
+      ): () =>
+          _setZoom(_zoomPercent + 10),
+      const SingleActivator(LogicalKeyboardKey.numpadAdd, control: true): () =>
+          _setZoom(_zoomPercent + 10),
+      const SingleActivator(LogicalKeyboardKey.minus, control: true): () =>
+          _setZoom(_zoomPercent - 10),
+      const SingleActivator(
+        LogicalKeyboardKey.numpadSubtract,
+        control: true,
+      ): () =>
+          _setZoom(_zoomPercent - 10),
+      const SingleActivator(LogicalKeyboardKey.digit0, control: true): () =>
+          _setZoom(100),
+    },
     const SingleActivator(
       LogicalKeyboardKey.keyR,
       control: true,
@@ -318,9 +348,8 @@ class _BrowserPageState extends State<BrowserPage> {
       });
     } catch (error) {
       if (!mounted || generation != _demoLoadGeneration) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Could not open demo: $error')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Could not open demo: $error')));
     }
   }
 
@@ -425,6 +454,7 @@ class _BrowserPageState extends State<BrowserPage> {
                       content: _content,
                       contentType: _contentType,
                       reloadRevision: _reloadRevision,
+                      pageZoom: _zoomPercent / 100,
                       loadProgress: _loadProgress,
                       viewportMode: _viewportMode,
                       onLoadProgressChanged: _handleLoadProgress,
@@ -440,6 +470,8 @@ class _BrowserPageState extends State<BrowserPage> {
                   isLoading: _isLoading,
                   viewportMode: _viewportMode,
                   currentAddress: _addressController.text,
+                  zoomPercent: _zoomPercent,
+                  onResetZoom: _supportsZoom ? () => _setZoom(100) : null,
                 ),
               ],
             ),
@@ -708,6 +740,7 @@ class _BrowserViewport extends StatelessWidget {
     required this.content,
     required this.contentType,
     required this.reloadRevision,
+    required this.pageZoom,
     required this.loadProgress,
     required this.viewportMode,
     required this.onLoadProgressChanged,
@@ -721,6 +754,7 @@ class _BrowserViewport extends StatelessWidget {
   final String content;
   final FlutterServoContentType contentType;
   final int reloadRevision;
+  final double pageZoom;
   final FlutterServoLoadProgress loadProgress;
   final _ViewportMode viewportMode;
   final ValueChanged<FlutterServoLoadProgress> onLoadProgressChanged;
@@ -738,6 +772,7 @@ class _BrowserViewport extends StatelessWidget {
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,
+            pageZoom: pageZoom,
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
             onError: onError,
@@ -747,6 +782,7 @@ class _BrowserViewport extends StatelessWidget {
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,
+            pageZoom: pageZoom,
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
             onError: onError,
@@ -863,11 +899,15 @@ class _BrowserStatus extends StatelessWidget {
     required this.isLoading,
     required this.viewportMode,
     required this.currentAddress,
+    required this.zoomPercent,
+    required this.onResetZoom,
   });
 
   final bool isLoading;
   final _ViewportMode viewportMode;
   final String currentAddress;
+  final int zoomPercent;
+  final VoidCallback? onResetZoom;
 
   @override
   Widget build(BuildContext context) {
@@ -882,7 +922,7 @@ class _BrowserStatus extends StatelessWidget {
       child: Row(
         children: [
           Icon(
-            isLoading ? Icons.sync : Icons.lock_outline,
+            isLoading ? Icons.sync : Icons.language,
             size: 14,
             color: isLoading
                 ? const Color(0xFFE9B44C)
@@ -901,6 +941,16 @@ class _BrowserStatus extends StatelessWidget {
               style: const TextStyle(fontSize: 12, color: Color(0xFF9BA8B5)),
             ),
           ),
+          if (onResetZoom != null)
+            TextButton(
+              onPressed: onResetZoom,
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                minimumSize: const Size(48, 26),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text('$zoomPercent%', semanticsLabel: 'Reset page zoom'),
+            ),
           Text(
             viewportMode == _ViewportMode.mobile ? '390px MOBILE' : 'DESKTOP',
             style: const TextStyle(

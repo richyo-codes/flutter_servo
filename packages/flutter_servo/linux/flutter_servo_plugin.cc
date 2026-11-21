@@ -31,6 +31,8 @@ struct _FlutterServoPlugin {
   int wake_fd;
   int load_progress;
   bool has_frame;
+  float display_scale;
+  float page_zoom;
   ServoNavigationState navigation_state;
 };
 
@@ -192,6 +194,8 @@ static bool render_texture(FlutterServoPlugin* self) {
 
   bool rendered = false;
   if (ensure_session(self)) {
+    rust_render_bridge_set_viewport_scale(self->rust_render_bridge, self->session,
+                                         self->display_scale, self->page_zoom);
     const uint32_t width = servo_texture_get_width(self->texture);
     const uint32_t height = servo_texture_get_height(self->texture);
     if (servo_texture_wants_shared_frame(self->texture) &&
@@ -246,10 +250,11 @@ static void publish_placeholder_texture(FlutterServoPlugin* self,
 
 static bool parse_size_args(FlMethodCall* method_call,
                             uint32_t* width_out,
-                            uint32_t* height_out) {
+                            uint32_t* height_out,
+                            FlutterServoPlugin* self) {
   FlValue* args = fl_method_call_get_args(method_call);
   if (fl_value_get_type(args) != FL_VALUE_TYPE_LIST ||
-      fl_value_get_length(args) != 2) {
+      (fl_value_get_length(args) != 2 && fl_value_get_length(args) != 4)) {
     return false;
   }
 
@@ -260,8 +265,24 @@ static bool parse_size_args(FlMethodCall* method_call,
     return false;
   }
 
-  *width_out = std::max<int64_t>(1, fl_value_get_int(width_value));
-  *height_out = std::max<int64_t>(1, fl_value_get_int(height_value));
+  const int64_t width = fl_value_get_int(width_value);
+  const int64_t height = fl_value_get_int(height_value);
+  if (width < 1 || width > 16384 || height < 1 || height > 16384 ||
+      width * height > 64 * 1024 * 1024) return false;
+  if (fl_value_get_length(args) == 4) {
+    FlValue* scale_value = fl_value_get_list_value(args, 2);
+    FlValue* zoom_value = fl_value_get_list_value(args, 3);
+    if (fl_value_get_type(scale_value) != FL_VALUE_TYPE_FLOAT ||
+        fl_value_get_type(zoom_value) != FL_VALUE_TYPE_FLOAT) return false;
+    const double scale = fl_value_get_float(scale_value);
+    const double zoom = fl_value_get_float(zoom_value);
+    if (!(scale >= 0.5 && scale <= 8.0 && zoom >= 0.5 && zoom <= 3.0))
+      return false;
+    self->display_scale = scale;
+    self->page_zoom = zoom;
+  }
+  *width_out = width;
+  *height_out = height;
   return true;
 }
 
@@ -458,9 +479,9 @@ static FlMethodResponse* handle_create_texture(FlutterServoPlugin* self,
                                                FlMethodCall* method_call) {
   uint32_t width = 1;
   uint32_t height = 1;
-  if (!parse_size_args(method_call, &width, &height)) {
+  if (!parse_size_args(method_call, &width, &height, self)) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
-        "invalid-args", "Expected [width, height].", nullptr));
+        "invalid-args", "Expected [width, height] with optional display scale and zoom.", nullptr));
   }
 
   if (self->texture == nullptr) {
@@ -504,18 +525,18 @@ static FlMethodResponse* handle_resize_texture(FlutterServoPlugin* self,
 
   uint32_t width = 1;
   uint32_t height = 1;
-  if (!parse_size_args(method_call, &width, &height)) {
+  if (!parse_size_args(method_call, &width, &height, self)) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
-        "invalid-args", "Expected [width, height].", nullptr));
+        "invalid-args", "Expected [width, height] with optional display scale and zoom.", nullptr));
   }
 
   g_message("flutter_servo: linux plugin resizeTexture %ux%u", width, height);
   servo_texture_resize(self->texture, width, height);
   if (self->session == nullptr) {
     publish_placeholder_texture(self, "resize");
-  } else if (!render_texture(self)) {
-    return FL_METHOD_RESPONSE(fl_method_error_response_new(
-        "render-failed", "Failed to render resized content.", nullptr));
+  } else {
+    // A loading page can lack a fresh frame. Keep the last frame until Servo wakes.
+    render_texture(self);
   }
 
   g_autoptr(FlValue) id =
@@ -769,6 +790,8 @@ static void flutter_servo_plugin_init(FlutterServoPlugin* self) {
   self->wake_source_id = 0;
   self->wake_fd = -1;
   self->load_progress = -1;
+  self->display_scale = 1.0f;
+  self->page_zoom = 1.0f;
   self->navigation_state = {};
 }
 

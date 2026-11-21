@@ -35,6 +35,11 @@ Browser shortcuts work while the webpage has focus:
 - Ctrl+R or F5 reloads the page.
 - Alt+Left/Right navigates back/forward.
 - Ctrl+D toggles the current page's bookmark.
+- Ctrl+Plus, Ctrl+Minus, and Ctrl+0 adjust and reset desktop page zoom.
+
+Desktop embedders can set `FlutterServoSurface.pageZoom` from 0.5 to 3.0.
+Servo combines it with the Flutter view's display scale and updates the page
+when the window moves between displays. Zoom does not reload the page.
 
 Loading keeps the previous real frame visible. On startup, a simple loading
 surface remains until the first native frame arrives, rather than displaying

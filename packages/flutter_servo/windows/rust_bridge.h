@@ -16,6 +16,7 @@ struct RustBridge {
   void *(*session_new)(const char *, const char *, const char *) = nullptr;
   void (*session_free)(void *) = nullptr;
   bool (*set_url)(void *, const char *) = nullptr;
+  bool (*set_viewport_scale)(void *, float, float) = nullptr;
   bool (*set_html)(void *, const char *) = nullptr;
   bool (*go_back)(void *) = nullptr;
   bool (*go_forward)(void *) = nullptr;

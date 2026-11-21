@@ -19,6 +19,7 @@ mod imp {
     use std::time::Instant;
 
     use dpi::PhysicalSize;
+    use euclid::Scale;
     use gleam::gl;
     use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
     use servo::{DeviceIntPoint, DeviceIntRect, DeviceIntSize};
@@ -176,6 +177,8 @@ mod imp {
         content: SessionContent,
         pending_navigation: bool,
         size: PhysicalSize<u32>,
+        display_scale: f32,
+        page_zoom: f32,
         rendered_frame_epoch: u64,
         wake_pending: Arc<AtomicBool>,
         wake_callback: Arc<crate::wake_callback::WakeCallback>,
@@ -265,6 +268,8 @@ mod imp {
                 content: SessionContent::Url(Url::parse("about:blank").unwrap()),
                 pending_navigation: true,
                 size,
+                display_scale: 1.0,
+                page_zoom: 1.0,
                 rendered_frame_epoch: 0,
                 wake_pending,
                 wake_callback,
@@ -617,9 +622,11 @@ mod imp {
                     let delegate = Rc::new(SessionDelegate::default());
                     let webview = WebViewBuilder::new(servo, rendering_context.clone())
                         .delegate(delegate.clone())
+                        .hidpi_scale_factor(Scale::new(self.display_scale))
                         .url(url)
                         .build();
                     webview.resize(self.size);
+                    webview.set_page_zoom(self.page_zoom);
                     self.webview = Some(webview);
                     self.delegate = delegate;
                     self.rendered_frame_epoch = 0;
@@ -740,6 +747,34 @@ mod imp {
         if !session.is_null() {
             drop(Box::from_raw(session.cast::<ServoRenderSession>()));
         }
+    }
+
+    #[no_mangle]
+    pub unsafe extern "C" fn flutter_servo_session_set_viewport_scale(
+        session: *mut c_void,
+        display_scale: f32,
+        page_zoom: f32,
+    ) -> bool {
+        let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
+            return false;
+        };
+        if !(0.5..=8.0).contains(&display_scale) || !(0.5..=3.0).contains(&page_zoom) {
+            return false;
+        }
+        if let Some(webview) = &session.webview {
+            if session.display_scale != display_scale {
+                webview.set_hidpi_scale_factor(Scale::new(display_scale));
+            }
+            if session.page_zoom != page_zoom {
+                webview.set_page_zoom(page_zoom);
+            }
+        }
+        if session.display_scale != display_scale || session.page_zoom != page_zoom {
+            session.display_scale = display_scale;
+            session.page_zoom = page_zoom;
+            session.delegate.mark_frame_dirty();
+        }
+        true
     }
 
     #[no_mangle]

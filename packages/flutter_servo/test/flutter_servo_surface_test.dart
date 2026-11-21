@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -804,7 +805,7 @@ void main() {
     expect(refreshAttempts, 1);
   });
 
-  testServoWidgets('debounces texture resize to the settled dimensions', (
+  testServoWidgets('coalesces live resize and forwards DPI and page zoom', (
     tester,
   ) async {
     final calls = <MethodCall>[];
@@ -822,6 +823,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     var width = 200.0;
+    var pageZoom = 1.0;
     late StateSetter updateSurface;
     await tester.pumpWidget(
       MaterialApp(
@@ -835,6 +837,7 @@ void main() {
                 height: 100,
                 child: FlutterServoSurface.html(
                   content: '<p>Resize target</p>',
+                  pageZoom: pageZoom,
                   fallback: const ColoredBox(color: Colors.white),
                 ),
               );
@@ -857,12 +860,29 @@ void main() {
 
     expect(calls.where((call) => call.method == 'resizeTexture'), isEmpty);
 
-    await tester.pump(const Duration(milliseconds: 100));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 21));
 
-    final resizeCalls = calls.where((call) => call.method == 'resizeTexture');
-    expect(resizeCalls, hasLength(1));
-    expect(resizeCalls.single.arguments, [400, 100]);
+    updateSurface(() => width = 500);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+
+    tester.view.devicePixelRatio = 1.5;
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 40));
+
+    updateSurface(() => pageZoom = 1.25);
+    await tester.pumpAndSettle();
+    expect(
+      calls
+          .where((call) => call.method == 'resizeTexture')
+          .map((call) => call.arguments),
+      [
+        [400, 100, 1.0, 1.0],
+        [500, 100, 1.0, 1.0],
+        [750, 150, 1.5, 1.0],
+        [750, 150, 1.5, 1.25],
+      ],
+    );
   });
 }
 

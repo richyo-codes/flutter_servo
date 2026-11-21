@@ -21,6 +21,8 @@ RustRenderSessionHandle rust_render_bridge_create_session(
 void rust_render_bridge_destroy_session(RustRenderBridge* self,
                                         RustRenderSessionHandle session);
 
+void rust_render_bridge_set_viewport_scale(RustRenderBridge* self,
+    RustRenderSessionHandle session, float display_scale, float page_zoom);
 bool rust_render_bridge_set_url(RustRenderBridge* self,
                                 RustRenderSessionHandle session,
                                 const char* url);

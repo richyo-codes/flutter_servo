@@ -78,6 +78,7 @@ struct _RustRenderBridge {
   void (*control_event_free)(char*);
   bool (*control_response)(void*, const char*);
   int (*session_wake_fd)(void*);
+  bool (*set_viewport_scale)(void*, float, float);
   FlutterServoSessionNewFn session_new;
   FlutterServoSessionFreeFn session_free;
   FlutterServoSessionSetTextFn session_set_url;
@@ -224,6 +225,9 @@ RustRenderBridge* rust_render_bridge_new() {
 
   RustRenderBridge* self = g_new0(RustRenderBridge, 1);
   self->handle = handle;
+  self->set_viewport_scale = resolve_symbol<bool (*)(void*, float, float)>(
+      handle == nullptr ? RTLD_DEFAULT : handle,
+      "flutter_servo_session_set_viewport_scale");
   self->session_wake_fd = resolve_symbol<int (*)(void*)>(
       handle == nullptr ? RTLD_DEFAULT : handle, "flutter_servo_session_wake_fd");
   self->session_new = session_new;
@@ -329,6 +333,13 @@ void rust_render_bridge_destroy_session(RustRenderBridge* self,
     return;
   }
   self->session_free(session);
+}
+
+void rust_render_bridge_set_viewport_scale(RustRenderBridge* self,
+    RustRenderSessionHandle session, float display_scale, float page_zoom) {
+  if (self != nullptr && self->set_viewport_scale != nullptr && session != nullptr) {
+    self->set_viewport_scale(session, display_scale, page_zoom);
+  }
 }
 
 bool rust_render_bridge_set_url(RustRenderBridge* self,
