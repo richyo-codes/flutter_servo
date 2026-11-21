@@ -254,9 +254,20 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     final overlay =
         Overlay.of(context).context.findRenderObject()! as RenderBox;
     final position = overlay.globalToLocal(globalPosition);
+    final colors = Theme.of(context).colorScheme;
     final index = await showMenu<int>(
       context: context,
       requestFocus: false,
+      color: colors.surfaceContainerHigh,
+      surfaceTintColor: Colors.transparent,
+      elevation: 8,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: BorderSide(color: colors.outlineVariant),
+      ),
+      clipBehavior: Clip.antiAlias,
+      menuPadding: const EdgeInsets.symmetric(vertical: 5),
+      constraints: const BoxConstraints(minWidth: 176, maxWidth: 320),
       position: RelativeRect.fromRect(
         Rect.fromLTWH(position.dx, position.dy, 0, 0),
         Offset.zero & overlay.size,
@@ -264,11 +275,13 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
       items: [
         for (final item in event['items'] as List)
           if (item['separator'] == true)
-            const PopupMenuDivider()
+            const PopupMenuDivider(height: 9, indent: 10, endIndent: 10)
           else
             PopupMenuItem<int>(
               value: item['index'] as int,
               enabled: item['enabled'] == true,
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
               child: Builder(
                 builder: (context) {
                   _menuRoute = ModalRoute.of(context) as PopupRoute<int>;
