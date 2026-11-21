@@ -55,6 +55,24 @@ This path still copies on the GPU; it is not zero-copy. Run
 same-display and cross-display transfers on your driver. Software rendering may
 not support cross-display export and will fall back to CPU transfer in the app.
 
+## Isolation
+
+Desktop Servo runs inside the host application process. The Linux Flatpak
+manifest confines the application as a whole, with network, display, and GPU
+access. It does not isolate individual web pages from the host app. A desktop
+content-process sandbox would require a separate Servo worker and IPC boundary.
+For applications that display untrusted content, account for the host process's
+permissions when choosing how to deploy the embedder.
+
+For local HTML testing with networking disabled, use the installed Linux
+Flatpak with a per-launch override:
+
+```bash
+flatpak run --unshare=network com.rnd.flutter_servo_browser
+```
+
+Use a bundled demo in this mode. Remote pages and assets need network access.
+
 ## Development
 
 ### Precompiled Servo libraries
