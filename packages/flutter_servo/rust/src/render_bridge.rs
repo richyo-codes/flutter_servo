@@ -189,8 +189,13 @@ mod imp {
             render_log!("flutter_servo: rust session new start");
             let size = PhysicalSize::new(800, 600);
             render_log!("flutter_servo: rust session creating rendering context");
+            let prefer_hardware = match std::env::var("FLUTTER_SERVO_GPU_TEXTURES").as_deref() {
+                Ok("1") => true,
+                Ok("0") => false,
+                _ => cfg!(target_os = "windows"),
+            };
             let rendering_context: Rc<dyn RenderingContext> =
-                if std::env::var("FLUTTER_SERVO_GPU_TEXTURES").as_deref() == Ok("1") {
+                if prefer_hardware {
                     match crate::gpu_context::GpuContext::new(size) {
                         Ok(context) => Rc::new(context),
                         Err(error) => {

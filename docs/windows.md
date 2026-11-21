@@ -4,8 +4,14 @@ The experimental Windows x64 backend embeds Servo in a Flutter pixel-buffer
 texture. It uses the standard Flutter Windows engine. GTK and the custom Linux
 Flutter SDK are not needed.
 
-Servo renders through ANGLE (D3D11 WARP by default). Frames are read back to RGBA
-and passed to Flutter with an explicit release callback. Servo wakeups post
+Servo tries an ANGLE D3D11 hardware context first and falls back to WARP if
+context creation fails. The `Servo graphics` startup line identifies the
+selected renderer. To force WARP for comparison, set
+`$env:FLUTTER_SERVO_GPU_TEXTURES = '0'` before launching the browser or native
+probe. Remove that environment variable to restore automatic selection.
+
+Frames are read back to RGBA and passed to Flutter with an explicit release
+callback. Servo wakeups post
 coalesced messages to the platform thread; a 16 ms timer runs only during
 animation. Direct D3D texture sharing is not implemented yet.
 
