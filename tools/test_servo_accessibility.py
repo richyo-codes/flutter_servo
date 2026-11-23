@@ -9,7 +9,18 @@ import time
 
 
 def main(library_path):
-    library = ctypes.CDLL(str(Path(library_path).resolve()))
+    library_path = Path(library_path).resolve()
+    angle = []
+    if sys.platform == "win32":
+        # Surfman calls LoadLibraryA("libEGL.dll") later. Keep the exact
+        # bundled ANGLE pair loaded so that lookup works inside python.exe.
+        for name in ("libGLESv2.dll", "libEGL.dll"):
+            dll = library_path.with_name(name)
+            try:
+                angle.append(ctypes.WinDLL(str(dll)))
+            except OSError as error:
+                raise RuntimeError(f"Could not preload bundled ANGLE DLL: {dll}") from error
+    library = ctypes.CDLL(str(library_path))
 
     def bind(name, result, *args):
         function = getattr(library, f"flutter_servo_{name}")
