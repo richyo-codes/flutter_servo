@@ -111,8 +111,6 @@ jobs:
         run: |
           sdk="$GITHUB_WORKSPACE/.fvm/flutter_sdk/bin/flutter"
           cd packages/flutter_servo/example
-          sed -i 's/^      rust_build_mode: debug$/      rust_build_mode: release/' pubspec.yaml
-          grep -q '^      rust_build_mode: release$' pubspec.yaml
           "$sdk" pub get
           "$sdk" build linux --release --linux-gtk=gtk4
 
