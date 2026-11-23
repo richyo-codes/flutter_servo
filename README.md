@@ -29,6 +29,8 @@ usage and [native build setup](docs/native-builds.md) for build options.
 The [example browser](packages/flutter_servo/example) is a standalone Flutter
 app that demonstrates navigation, bookmarks, and embedding demos.
 
+![The Flutter Servo example browser rendering CSS Grid, Flexbox, and SVG](docs/screenshots/rendering.png)
+
 Download a browser bundle from **Browser CI** under **Artifacts**. Linux
 offers GTK3 and GTK4 packages, and Windows offers an x64 ZIP.
 See [CI builds and downloads](docs/github-actions.md).
