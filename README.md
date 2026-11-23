@@ -1,5 +1,7 @@
 # Flutter Servo Embedder
 
+[![pub.dev](https://img.shields.io/pub/v/flutter_servo)](https://pub.dev/packages/flutter_servo)
+
 Flutter Servo Embedder is a desktop-focused Flutter library for embedding web content
 with Servo. It offers an alternative to platform WebViews and Chromium-based
 embedding on Linux and Windows. Android and iOS use the system WebView.
