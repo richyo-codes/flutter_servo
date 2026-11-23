@@ -31,6 +31,10 @@ Use **Developer PowerShell for VS 2022** with the x64 compiler environment.
 If it opens Windows PowerShell 5, run `pwsh` there to inherit the compiler
 environment in PowerShell 7.
 Keep the checkout path short, for example `C:\src\flutter-servo-browser`.
+If Cargo reports `path too long` while fetching Servo, shorten its dependency
+cache as well. Set `$env:CARGO_HOME = 'C:\ch'` before building, as Windows CI
+does. This changes the dependency checkout location independently of the
+Native Assets build-output path.
 The first build compiles Servo and SpiderMonkey and can take substantial time
 and memory. The scripts default to two Cargo jobs; reduce `CARGO_BUILD_JOBS`
 to `1` if necessary.

@@ -30,12 +30,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - name: Set short Windows Cargo cache path
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_ENV -Value 'CARGO_HOME=C:\ch' -Encoding utf8
       - uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: native-${{ env.TARGET }}-${{ hashFiles('packages/flutter_servo/rust/Cargo.lock') }}
+            ${{ env.CARGO_HOME || '~/.cargo' }}/registry
+            ${{ env.CARGO_HOME || '~/.cargo' }}/git
+          key: native-${{ env.TARGET }}-${{ runner.os == 'Windows' && 'short-cargo-' || '' }}${{ hashFiles('packages/flutter_servo/rust/Cargo.lock') }}
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
         run: |

@@ -12,6 +12,8 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 180
     env:
+      # Servo's WPT checkout exceeds MAX_PATH under the runner's user profile.
+      CARGO_HOME: 'C:\ch'
       CARGO_BUILD_JOBS: 2
       CARGO_INCREMENTAL: 0
     steps:
@@ -36,10 +38,10 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            ${{ env.CARGO_HOME }}/registry
+            ${{ env.CARGO_HOME }}/git
             .dart_tool/windows-deps
-          key: windows-servo-${{ runner.os }}-${{ hashFiles('packages/flutter_servo/rust/Cargo.lock', 'tools/setup_windows.ps1') }}
+          key: windows-servo-short-cargo-${{ runner.os }}-${{ hashFiles('packages/flutter_servo/rust/Cargo.lock', 'tools/setup_windows.ps1') }}
       - name: Build release browser and run native renderer probe
         shell: pwsh
         run: ./tools/build_windows.ps1 -Configuration Release -Probe
