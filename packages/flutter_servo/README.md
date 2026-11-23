@@ -7,6 +7,13 @@ on Linux and Windows. Android and iOS use the system WebView.
 This is an independent, third-party community package. It is not affiliated
 with or endorsed by the Servo project.
 
+## Why Servo?
+
+[Servo](https://servo.org/about/) is a Rust web engine built for embedding.
+It offers a potentially smaller alternative to bundling Chromium, and safe
+Rust helps prevent classes of memory bugs. Bundle sizes vary by build, and
+Servo isn't a drop-in replacement for Chromium's web compatibility.
+
 ## Embed a Page
 
 Initialize the package once before mounting a surface:

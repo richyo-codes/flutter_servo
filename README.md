@@ -7,6 +7,17 @@ embedding on Linux and Windows. Android and iOS use the system WebView.
 Flutter Servo Embedder is an independent, third-party community project.
 It is not affiliated with or endorsed by the Servo project.
 
+## Why Servo?
+
+[Servo](https://servo.org/about/) is a Rust web engine designed to be embedded.
+Its WebView API lets Flutter host web content without shipping a standalone
+browser. Rust's memory-safety guarantees in safe code help prevent classes of
+memory bugs, but don't replace sandboxing or security review.
+
+Servo can be a smaller dependency than a Chromium-based embedder. Actual
+bundle size depends on the platform and build options, and Servo doesn't
+offer the same web compatibility as Chromium. Test the pages your app needs.
+
 ## Embed a Page
 
 Add `packages/flutter_servo` from this repository as a dependency in your
