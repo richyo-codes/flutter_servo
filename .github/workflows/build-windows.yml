@@ -11,6 +11,10 @@ on:
         description: Version for the browser archive
         type: string
         default: ''
+      reuse_native_assets:
+        description: Consume the Windows native archive from this workflow run
+        type: boolean
+        default: false
   workflow_dispatch:
 
 permissions:
@@ -38,30 +42,45 @@ jobs:
           channel: stable
           cache: true
       - uses: astral-sh/setup-uv@v6
+        if: '!inputs.reuse_native_assets'
       - uses: KyleMayes/install-llvm-action@v2
+        if: '!inputs.reuse_native_assets'
         with:
           version: '20.1'
           directory: ${{ runner.temp }}/llvm
       - name: Configure libclang
+        if: '!inputs.reuse_native_assets'
         shell: pwsh
         run: '"LIBCLANG_PATH=$env:LLVM_PATH\bin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append'
       - uses: actions/cache@v4
+        if: '!inputs.reuse_native_assets'
         with:
           path: |
             ${{ env.CARGO_HOME }}/registry
             ${{ env.CARGO_HOME }}/git
             .dart_tool/windows-deps
           key: windows-servo-short-cargo-${{ runner.os }}-${{ hashFiles('packages/flutter_servo/rust/Cargo.lock', 'tools/setup_windows.ps1') }}
+      - uses: actions/download-artifact@v4
+        if: inputs.reuse_native_assets
+        with:
+          name: flutter-servo-native-windows-x64-${{ inputs.checkout_ref || github.sha }}
+          path: .dart_tool/ci-native-download
+      - name: Use CI-built Servo library
+        if: inputs.reuse_native_assets
+        shell: bash
+        run: bash tools/configure_ci_native_assets.sh .dart_tool/ci-native-download
       - name: Build release browser and run native renderer probe
         shell: pwsh
-        run: ./tools/build_windows.ps1 -Configuration Release -Probe
+        env:
+          REUSE_NATIVE_ASSETS: ${{ inputs.reuse_native_assets }}
+        run: ./tools/build_windows.ps1 -Configuration Release -Probe -Prebuilt:($env:REUSE_NATIVE_ASSETS -eq 'true')
       - name: Archive browser bundle
         shell: pwsh
         env:
           ARTIFACT_VERSION: ${{ inputs.artifact_version }}
         run: |
           $version = $env:ARTIFACT_VERSION
-          if (-not $version) { $version = (git describe --tags --always --dirty).Trim() }
+          if (-not $version) { $version = (git describe --tags --always).Trim() }
           $name = "flutter-servo-browser-$version-windows-x64-release"
           "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $bundle = 'packages/flutter_servo/example/build/windows/x64/runner/Release'

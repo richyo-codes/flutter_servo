@@ -41,8 +41,22 @@ jobs:
           echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
 
-  tests:
+  native-linux:
     needs: validate
+    uses: ./.github/workflows/build-native-assets.yml
+    with:
+      checkout_ref: ${{ needs.validate.outputs.commit }}
+      platform: linux-x64
+
+  native-windows:
+    needs: validate
+    uses: ./.github/workflows/build-native-assets.yml
+    with:
+      checkout_ref: ${{ needs.validate.outputs.commit }}
+      platform: windows-x64
+
+  tests:
+    needs: [validate, native-linux]
     uses: ./.github/workflows/checks.yml
     with:
       checkout_ref: ${{ needs.validate.outputs.commit }}
@@ -55,11 +69,12 @@ jobs:
       artifact_version: ${{ needs.validate.outputs.tag }}
 
   windows:
-    needs: [validate, tests]
+    needs: [validate, tests, native-windows]
     uses: ./.github/workflows/build-windows.yml
     with:
       checkout_ref: ${{ needs.validate.outputs.commit }}
       artifact_version: ${{ needs.validate.outputs.tag }}
+      reuse_native_assets: true
 
   publish:
     needs: [validate, linux, windows]

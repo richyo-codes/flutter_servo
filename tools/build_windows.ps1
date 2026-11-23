@@ -3,10 +3,13 @@
 param(
     [ValidateSet('Debug', 'Release')][string]$Configuration = 'Release',
     [switch]$Run,
-    [switch]$Probe
+    [switch]$Probe,
+    [switch]$Prebuilt
 )
 $ErrorActionPreference = 'Stop'
-& (Join-Path $PSScriptRoot 'setup_windows.ps1')
+if (-not $Prebuilt) {
+    & (Join-Path $PSScriptRoot 'setup_windows.ps1')
+}
 $root = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $example = Join-Path $root 'packages/flutter_servo/example'
 $logDirectory = Join-Path $root 'logs'

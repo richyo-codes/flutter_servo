@@ -14,7 +14,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  native-linux:
+    uses: ./.github/workflows/build-native-assets.yml
+    with:
+      platform: linux-x64
+
+  native-windows:
+    uses: ./.github/workflows/build-native-assets.yml
+    with:
+      platform: windows-x64
+
   tests:
+    needs: native-linux
     uses: ./.github/workflows/checks.yml
 
   gtk4-rpm:
@@ -22,5 +33,7 @@ jobs:
     uses: ./.github/workflows/build-gtk4-rpm.yml
 
   windows:
-    needs: tests
+    needs: [tests, native-windows]
     uses: ./.github/workflows/build-windows.yml
+    with:
+      reuse_native_assets: true

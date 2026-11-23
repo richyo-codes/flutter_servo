@@ -77,10 +77,10 @@ Use a bundled demo in this mode. Remote pages and assets need network access.
 
 ### Precompiled Servo libraries
 
-The **Servo Native Assets** GitHub Actions workflow uploads optimized Linux x64
-and Windows x64 libraries and SHA-256 checksums when native build inputs change
-on a branch or pull request, and on manual runs. Look for the downloads in the
-run's **Artifacts** section. A `native-vX.Y.Z` tag builds both and publishes them under
+**Browser CI** uploads optimized Linux x64 and Windows x64 libraries and
+SHA-256 checksums, then reuses the archives for the browser builds. Look for
+the downloads in the run's **Artifacts** section. Run **Servo Native Assets**
+manually for a library-only build. A `native-vX.Y.Z` tag publishes both libraries under
 GitHub Releases once the package license and repository's `BROWSER_LICENSE`
 release setting are configured.
 

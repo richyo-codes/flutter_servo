@@ -25,8 +25,6 @@ jobs:
       FLUTTER_PREBUILT_ENGINE_VERSION: f2b4375245d63bdb7007d42b4032e0e8d079780c
       FLUTTER_STORAGE_BASE_URL: https://pub-79a02b1963fb4da6b5e4e4816e8b7146.r2.dev
       FLUTTER_LINUX_GTK: gtk4
-      CARGO_BUILD_JOBS: 2
-      CARGO_INCREMENTAL: 0
       BROWSER_LICENSE: ${{ vars.BROWSER_LICENSE || 'LicenseRef-Unspecified' }}
     steps:
       - uses: actions/checkout@v4
@@ -45,44 +43,20 @@ jobs:
           fi
           echo "ARTIFACT_VERSION=${version#v}" >> "$GITHUB_ENV"
 
-      - name: Make room for the Servo release build
-        shell: bash
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h .
-
-      - name: Install native build dependencies
+      - name: Install GTK4 bundle and RPM build dependencies
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential clang libclang-dev llvm-dev lld cmake ninja-build \
+            build-essential clang cmake ninja-build \
             pkg-config libgtk-3-dev libgtk-4-dev libepoxy-dev libgbm-dev \
             libegl1-mesa-dev libgles2-mesa-dev libgl1-mesa-dri \
-            libdbus-1-dev libfreetype6-dev libharfbuzz-dev libfontconfig1-dev \
-            libudev-dev libunwind-dev libx11-dev libxmu-dev xorg-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev liblzma-dev libssl-dev \
-            libsecret-1-dev libmimalloc-dev curl git unzip xz-utils zip \
-            gperf m4 nasm rpm patchelf xvfb
-
-      - uses: astral-sh/setup-uv@v6
-      - name: Install Python 3.11 for Servo bindings
-        run: uv python install 3.11
-
-      - name: Install the package's Rust toolchain
-        shell: bash
-        run: |
-          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' packages/flutter_servo/rust/rust-toolchain.toml)"
-          test -n "$toolchain"
-          rustup toolchain install "$toolchain" --profile minimal
+            libfontconfig1 libfreetype6 curl git unzip xz-utils zip rpm patchelf xvfb
 
       - uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.pub-cache
-          key: gtk4-rpm-${{ runner.os }}-${{ env.FLUTTER_GTK4_SHA }}-${{ hashFiles('packages/flutter_servo/rust/Cargo.lock', 'packages/flutter_servo/example/pubspec.lock') }}
+          path: ~/.pub-cache
+          key: gtk4-rpm-${{ runner.os }}-${{ env.FLUTTER_GTK4_SHA }}-${{ hashFiles('packages/flutter_servo/example/pubspec.lock') }}
 
       - uses: dart-lang/setup-dart@v1
         with:
@@ -106,7 +80,13 @@ jobs:
           .fvm/flutter_sdk/bin/flutter config --enable-linux-desktop
           .fvm/flutter_sdk/bin/flutter precache --linux
 
-      - name: Build the browser and Rust renderer in release mode
+      - uses: actions/download-artifact@v4
+        with:
+          name: flutter-servo-native-linux-x64-${{ inputs.checkout_ref || github.sha }}
+          path: .dart_tool/ci-native-download
+      - name: Use CI-built Servo library
+        run: bash tools/configure_ci_native_assets.sh .dart_tool/ci-native-download
+      - name: Build the release browser
         shell: bash
         run: |
           sdk="$GITHUB_WORKSPACE/.fvm/flutter_sdk/bin/flutter"

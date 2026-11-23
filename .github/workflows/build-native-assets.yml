@@ -1,0 +1,114 @@
+name: Build Servo Native Assets
+
+on:
+  workflow_call:
+    inputs:
+      checkout_ref:
+        description: Commit to build; defaults to the caller's ref
+        type: string
+        default: ''
+      artifact_version:
+        description: Optional version suffix; defaults to the source commit
+        type: string
+        default: ''
+      platform:
+        description: Optional single platform (linux-x64 or windows-x64)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ fromJSON(inputs.platform == 'linux-x64' && '["linux-x64"]' || inputs.platform == 'windows-x64' && '["windows-x64"]' || '["linux-x64","windows-x64"]') }}
+    runs-on: ${{ matrix.platform == 'linux-x64' && 'ubuntu-latest' || 'windows-2022' }}
+    timeout-minutes: 180
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_BUILD_JOBS: 2
+      TARGET: ${{ matrix.platform == 'linux-x64' && 'x86_64-unknown-linux-gnu' || 'x86_64-pc-windows-msvc' }}
+      ARTIFACT: flutter-servo-native-${{ matrix.platform }}-${{ inputs.artifact_version || inputs.checkout_ref || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.checkout_ref }}
+      - uses: astral-sh/setup-uv@v6
+      - name: Set short Windows Cargo cache path
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Add-Content -Path $env:GITHUB_ENV -Value 'CARGO_HOME=C:\ch' -Encoding utf8
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.CARGO_HOME || '~/.cargo' }}/registry
+            ${{ env.CARGO_HOME || '~/.cargo' }}/git
+          key: native-${{ env.TARGET }}-${{ runner.os == 'Windows' && 'short-cargo-' || '' }}${{ hashFiles('packages/flutter_servo/rust/Cargo.lock') }}
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          sudo apt-get update
+          sudo apt-get install -y build-essential clang libclang-dev llvm-dev lld cmake ninja-build \
+            pkg-config libgtk-3-dev libepoxy-dev libgbm-dev libegl1-mesa-dev libgles2-mesa-dev \
+            libdbus-1-dev libfreetype6-dev libharfbuzz-dev libfontconfig1-dev libudev-dev \
+            libunwind-dev libx11-dev libxmu-dev xorg-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            liblzma-dev libssl-dev libsecret-1-dev libmimalloc-dev gperf m4 nasm xvfb curl ca-certificates
+          uv python install 3.11
+      - name: Install pinned Linux Rust toolchain
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' packages/flutter_servo/rust/rust-toolchain.toml)"
+          test -n "$toolchain"
+          if ! command -v rustup >/dev/null; then
+            installer="$(mktemp)"
+            trap 'rm -f "$installer"' EXIT
+            curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs -o "$installer"
+            sh "$installer" -y --profile minimal --default-toolchain none --no-modify-path
+            cargo_bin="${CARGO_HOME:-$HOME/.cargo}/bin"
+            export PATH="$cargo_bin:$PATH"
+            echo "$cargo_bin" >> "$GITHUB_PATH"
+          fi
+          rustup toolchain install "$toolchain" --profile minimal --target "$TARGET"
+          rustup run "$toolchain" cargo --version
+      - uses: ilammy/msvc-dev-cmd@v1
+        if: runner.os == 'Windows'
+        with:
+          arch: x64
+      - uses: subosito/flutter-action@v2
+        if: runner.os == 'Windows'
+        with:
+          channel: stable
+      - uses: KyleMayes/install-llvm-action@v2
+        if: runner.os == 'Windows'
+        with:
+          version: '20.1'
+          directory: ${{ runner.temp }}/llvm
+      - name: Build Linux native library
+        if: runner.os == 'Linux'
+        working-directory: packages/flutter_servo/rust
+        run: |
+          toolchain="$(sed -n 's/^channel = "\([^"]*\)"/\1/p' rust-toolchain.toml)"
+          test -n "$toolchain"
+          rustup run "$toolchain" cargo build --locked --release --features servo-engine --target "$TARGET" --target-dir "$RUNNER_TEMP/servo-native"
+      - name: Build Windows native library
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:LIBCLANG_PATH = Join-Path $env:LLVM_PATH 'bin'
+          ./tools/setup_windows.ps1
+          Set-Location packages/flutter_servo/rust
+          cargo build --locked --release --features servo-engine --target $env:TARGET --target-dir "$env:RUNNER_TEMP/servo-native"
+      - name: Package and check native libraries
+        shell: bash
+        run: bash tools/package_native_assets.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.ARTIFACT }}
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14

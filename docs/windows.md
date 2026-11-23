@@ -104,4 +104,6 @@ especially IME, clipboard, and shutdown, still needs validation on Windows.
 `Build Windows Browser` can run manually or through `Browser CI` and
 `Browser Release`. It builds a release bundle on `windows-2022`, runs the native
 probe, and uploads a versioned ZIP plus build logs. Tagged browser releases
-include the ZIP when release publishing is enabled.
+include the ZIP when release publishing is enabled. Browser CI and Browser
+Release consume the Windows native archive built earlier in the same run.
+A standalone Windows browser run builds Servo from source.

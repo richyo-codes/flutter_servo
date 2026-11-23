@@ -1,14 +1,16 @@
 # GitHub Browser Builds
 
-**Browser CI** runs on pushes, pull requests, and manual runs. After the shared
-checks pass, it builds the same example browser for Linux x64 and Windows x64.
+**Browser CI** runs on pushes, pull requests, and manual runs. It builds the
+Servo native libraries once for Linux x64 and Windows x64. The widget tests
+use the Linux library, and each browser bundle uses the library for its
+platform. Each consumer checks the archive checksum and source commit before
+bundling it. After the shared checks pass, CI builds the example browser.
 Both bundles contain the login, licenses, documentation, and video demos. Linux
 uploads a GTK4 tarball and RPM. Windows uploads a ZIP. Downloads appear under
 the run's **Artifacts** section and are retained for 14 days.
 
-**Servo Native Assets** uploads separate Linux x64 and Windows x64 archives for
-embedders. Both variants build on native-related pushes and pull requests,
-manual runs, and `native-v*` tags.
+The native archives are also available to embedders in the **Browser CI** run.
+Use **Servo Native Assets** for a standalone manual build or a `native-v*` tag.
 
 The build uses the public Flutter GTK4 fork and precompiled engine artifacts:
 
@@ -22,8 +24,8 @@ Some versions of actionlint still require ignoring its unknown-label warning
 for this runner when validating locally.
 
 No local Flutter/Servo/Surfman checkout is required on the runner. The package's
-Rust toolchain and public Servo/Surfman pins remain authoritative. CI installs
-Python 3.11 for Servo's generated bindings and builds both Flutter and Rust in
+Rust toolchain and public Servo/Surfman pins remain authoritative. Native build
+jobs install Python 3.11 for Servo's generated bindings and compile Rust in
 release mode. Common Flutter assets use Flutter's usual storage; the custom
 storage URL is scoped to the engine setup.
 
