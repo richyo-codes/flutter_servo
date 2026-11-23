@@ -10,6 +10,14 @@ use euclid::Scale;
 use servo::{InputEvent, KeyState, MouseButton, MouseButtonAction, RgbaImage};
 
 use super::{log_elapsed_ms, ProxyOverrides, ServoRenderSession};
+use crate::frame_size::FrameSize;
+
+fn guard<T>(operation: &str, fallback: T, call: impl FnOnce() -> T) -> T {
+    catch_unwind(AssertUnwindSafe(call)).unwrap_or_else(|_| {
+        render_log!("flutter_servo: {operation} panicked");
+        fallback
+    })
+}
 
 fn optional_c_string(ptr: *const c_char) -> Option<String> {
     c_string(ptr).map(|value| value.to_owned())
@@ -46,7 +54,9 @@ pub unsafe extern "C" fn flutter_servo_session_new(
 #[no_mangle]
 pub unsafe extern "C" fn flutter_servo_session_free(session: *mut c_void) {
     if !session.is_null() {
-        drop(Box::from_raw(session.cast::<ServoRenderSession>()));
+        guard("session teardown", (), || {
+            drop(Box::from_raw(session.cast::<ServoRenderSession>()));
+        });
     }
 }
 
@@ -306,13 +316,22 @@ pub unsafe extern "C" fn flutter_servo_session_paint(
     let Some(session) = session.cast::<ServoRenderSession>().as_mut() else {
         return false;
     };
-    catch_unwind(AssertUnwindSafe(|| session.paint(width, height))).unwrap_or(false)
+    let Some(size) = FrameSize::new(width, height) else {
+        return false;
+    };
+    guard("paint", false, || session.paint(&size))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn flutter_servo_session_take_control_event(
     session: *mut c_void,
 ) -> *mut c_char {
+    guard("take control event", null_mut(), || {
+        take_control_event(session)
+    })
+}
+
+unsafe fn take_control_event(session: *mut c_void) -> *mut c_char {
     let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
         return null_mut();
     };
@@ -335,6 +354,12 @@ pub unsafe extern "C" fn flutter_servo_session_control_response(
     session: *mut c_void,
     response: *const c_char,
 ) -> bool {
+    guard("control response", false, || {
+        control_response(session, response)
+    })
+}
+
+unsafe fn control_response(session: *mut c_void, response: *const c_char) -> bool {
     let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
         return false;
     };
@@ -468,15 +493,15 @@ pub unsafe extern "C" fn flutter_servo_session_render_frame(
     if data_out.is_null() || len_out.is_null() {
         return null_mut();
     }
-    catch_unwind(AssertUnwindSafe(|| session.render_image(width, height)))
-        .ok()
-        .flatten()
-        .map_or(null_mut(), |image| {
-            let frame = Box::new(ExportedFrame(image));
-            *data_out = frame.0.as_raw().as_ptr();
-            *len_out = frame.0.as_raw().len();
-            Box::into_raw(frame).cast()
-        })
+    let Some(size) = FrameSize::new(width, height) else {
+        return null_mut();
+    };
+    guard("render frame", None, || session.render_image(&size)).map_or(null_mut(), |image| {
+        let frame = Box::new(ExportedFrame(image));
+        *data_out = frame.0.as_raw().as_ptr();
+        *len_out = frame.0.as_raw().len();
+        Box::into_raw(frame).cast()
+    })
 }
 
 #[no_mangle]

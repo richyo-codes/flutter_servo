@@ -28,7 +28,7 @@ fn log_elapsed_ms() -> u128 {
     START.get_or_init(Instant::now).elapsed().as_millis()
 }
 
-const BYTES_PER_PIXEL: usize = 4;
+use crate::frame_size::FrameSize;
 
 macro_rules! render_log {
     ($($arg:tt)*) => {
@@ -494,11 +494,8 @@ impl ServoRenderSession {
         }
     }
 
-    fn paint(&mut self, width: u32, height: u32) -> bool {
-        let width = width.max(1);
-        let height = height.max(1);
-
-        if !self.prepare_for_render(width, height) {
+    fn paint(&mut self, size: &FrameSize) -> bool {
+        if !self.prepare_for_render(size.width, size.height) {
             render_log!("flutter_servo: rust render prepare failed");
             return false;
         }
@@ -524,10 +521,9 @@ impl ServoRenderSession {
         true
     }
 
-    fn render_image(&mut self, width: u32, height: u32) -> Option<RgbaImage> {
-        let width = width.max(1);
-        let height = height.max(1);
-        if !self.paint(width, height) {
+    fn render_image(&mut self, size: &FrameSize) -> Option<RgbaImage> {
+        let (width, height) = (size.width, size.height);
+        if !self.paint(size) {
             return None;
         }
 
@@ -562,17 +558,18 @@ impl ServoRenderSession {
     }
 
     fn render_rgba(&mut self, width: u32, height: u32, out_rgba: *mut u8, out_len: usize) -> bool {
-        let width = width.max(1);
-        let height = height.max(1);
-        let expected_len = width as usize * height as usize * BYTES_PER_PIXEL;
+        let Some(size) = FrameSize::new(width, height) else {
+            return false;
+        };
+        let expected_len = size.rgba_len;
         if out_rgba.is_null() || out_len < expected_len {
             render_log!("flutter_servo: rust render rejected buffer");
             return false;
         }
-        let Some(image) = self.render_image(width, height) else {
+        let Some(image) = self.render_image(&size) else {
             return false;
         };
-        copy_image_into_buffer(&image, width, height, unsafe {
+        copy_image_into_buffer(&image, size.width, size.height, unsafe {
             slice::from_raw_parts_mut(out_rgba, expected_len)
         })
     }

@@ -4,6 +4,8 @@ mod accessibility;
 #[cfg(feature = "servo-engine")]
 mod embedder_controls;
 mod frb_generated;
+#[cfg(any(feature = "servo-engine", test))]
+mod frame_size;
 #[cfg(feature = "servo-engine")]
 mod gpu_context;
 #[cfg(any(feature = "servo-engine", test))]
