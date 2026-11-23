@@ -30,9 +30,9 @@ Linux engine. Includes the browser bundle and its private native libraries.
 mkdir -p %{buildroot}/usr/lib64/%{name}
 cp -a bundle/. %{buildroot}/usr/lib64/%{name}/
 install -Dm755 launcher %{buildroot}/usr/bin/%{name}
-install -Dm644 browser.desktop %{buildroot}/usr/share/applications/com.rnd.flutter_servo_browser.@GTK@.desktop
+install -Dm644 browser.desktop %{buildroot}/usr/share/applications/ca.richyoung.flutter_servo_browser.@GTK@.desktop
 
 %files
 /usr/lib64/%{name}
 /usr/bin/%{name}
-/usr/share/applications/com.rnd.flutter_servo_browser.@GTK@.desktop
+/usr/share/applications/ca.richyoung.flutter_servo_browser.@GTK@.desktop

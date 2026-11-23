@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "com.rnd.flutter_servo_browser"
+    namespace = "ca.richyoung.flutter_servo_browser"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -15,7 +15,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.rnd.flutter_servo_browser"
+        applicationId = "ca.richyoung.flutter_servo_browser"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         // Match the native WebView backend's Android API floor explicitly.

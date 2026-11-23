@@ -62,7 +62,7 @@ would require a separate Servo worker and an IPC boundary.
 Run a bundled demo without networking using the installed Flatpak:
 
 ```bash
-flatpak run --unshare=network com.rnd.flutter_servo_browser
+flatpak run --unshare=network ca.richyoung.flutter_servo_browser
 ```
 
 ## Testing

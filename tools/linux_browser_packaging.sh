@@ -25,6 +25,6 @@ stage_browser_entries() {
   local variant=$1 installed_bundle=$2 launcher=$3 desktop=$4
   printf '#!/usr/bin/env sh\nexec %s/flutter_servo_example "$@"\n' "$installed_bundle" > "$launcher"
   chmod 755 "$launcher"
-  printf '[Desktop Entry]\nType=Application\nName=Flutter Servo Browser (%s)\nComment=Browse the web with Servo\nExec=flutter-servo-browser-%s\nCategories=Network;WebBrowser;\nStartupNotify=true\nStartupWMClass=com.rnd.flutter_servo_browser\n' \
+  printf '[Desktop Entry]\nType=Application\nName=Flutter Servo Browser (%s)\nComment=Browse the web with Servo\nExec=flutter-servo-browser-%s\nCategories=Network;WebBrowser;\nStartupNotify=true\nStartupWMClass=ca.richyoung.flutter_servo_browser\n' \
     "${variant^^}" "$variant" > "$desktop"
 }

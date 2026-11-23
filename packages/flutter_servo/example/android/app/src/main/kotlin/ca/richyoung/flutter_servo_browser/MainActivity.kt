@@ -1,4 +1,4 @@
-package com.rnd.flutter_servo_browser
+package ca.richyoung.flutter_servo_browser
 
 import io.flutter.embedding.android.FlutterActivity
 

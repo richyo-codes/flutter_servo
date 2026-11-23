@@ -7,7 +7,7 @@ project(runner LANGUAGES CXX)
 set(BINARY_NAME "flutter_servo_example")
 # The unique GTK application identifier for this application. See:
 # https://wiki.gnome.org/HowDoI/ChooseApplicationID
-set(APPLICATION_ID "com.rnd.flutter_servo_browser")
+set(APPLICATION_ID "ca.richyoung.flutter_servo_browser")
 
 # Select the Linux runner ABI. The stock Flutter SDK provides GTK3; the local
 # GTK4 Flutter fork supplies the GTK4 library when explicitly selected.

@@ -67,7 +67,7 @@ bundle="$root$installed_bundle"
 mkdir -p "$root"/{DEBIAN,usr/bin,usr/share/applications} "$staging/debian"
 stage_browser_bundle "$bundle_dir" "$bundle" "$variant"
 stage_browser_entries "$variant" "$installed_bundle" "$root/usr/bin/$package" \
-  "$root/usr/share/applications/com.rnd.flutter_servo_browser.$variant.desktop"
+  "$root/usr/share/applications/ca.richyoung.flutter_servo_browser.$variant.desktop"
 
 printf 'Source: %s\n\nPackage: %s\nArchitecture: amd64\nDescription: Flutter Servo Browser\n' \
   "$package" "$package" > "$staging/debian/control"
