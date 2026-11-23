@@ -78,5 +78,8 @@ Generate Rust bridge bindings from the repository root:
 ./tools/rebuild_rust_bridge.sh
 ```
 
-In a standalone package checkout, run `flutter_rust_bridge_codegen generate`
-from the package root; the package includes its own generator configuration.
+The script uses the repository-root `flutter_rust_bridge.yaml`. If working
+from `packages/flutter_servo/` (including in a standalone package checkout),
+run `flutter_rust_bridge_codegen generate` there instead. The package-local
+configuration targets the same bindings with paths relative to the package.
+Run only one of these entry points.
