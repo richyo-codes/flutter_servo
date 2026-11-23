@@ -2,8 +2,7 @@ import 'dart:io';
 
 import 'package:flutter_rust_bridge_hooks/flutter_rust_bridge_hooks.dart';
 import 'package:code_assets/code_assets.dart';
-
-import 'prebuilt.dart';
+import 'package:flutter_servo/src/prebuilt_native_assets.dart';
 
 void main(List<String> args) async {
   await build(args, (input, output) async {

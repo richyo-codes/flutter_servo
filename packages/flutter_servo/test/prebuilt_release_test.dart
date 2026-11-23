@@ -2,9 +2,8 @@ import 'dart:io';
 
 import 'package:archive/archive.dart';
 import 'package:crypto/crypto.dart';
+import 'package:flutter_servo/src/prebuilt_native_assets.dart';
 import 'package:flutter_test/flutter_test.dart';
-
-import '../hook/prebuilt.dart';
 
 void main() {
   for (final platform in PrebuiltPlatform.values) {
