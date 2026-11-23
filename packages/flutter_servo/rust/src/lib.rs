@@ -8,6 +8,7 @@ mod frb_generated;
 mod gpu_context;
 #[cfg(any(feature = "servo-engine", test))]
 mod keyboard_input;
+#[cfg(feature = "servo-engine")]
 mod render_bridge;
 #[cfg(feature = "servo-engine")]
 mod servo_spike;
