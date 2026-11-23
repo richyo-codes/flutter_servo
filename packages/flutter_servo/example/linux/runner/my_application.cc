@@ -1,5 +1,9 @@
 #include "my_application.h"
 
+#if !defined(FLUTTER_LINUX_GTK4)
+#include <gdk/gdkwayland.h>
+#endif
+
 #include <flutter_linux/flutter_linux.h>
 #if !defined(FLUTTER_LINUX_GTK4)
 #ifdef GDK_WINDOWING_X11
@@ -101,6 +105,13 @@ static void my_application_activate(GApplication* application) {
   g_signal_connect_swapped(view, "first-frame", G_CALLBACK(first_frame_cb),
                            self);
   g_message("flutter_servo: linux runner connected first-frame handler");
+#if !defined(FLUTTER_LINUX_GTK4) && defined(GDK_WINDOWING_WAYLAND)
+  // Flutter's Wayland renderer attaches a subsurface during realization.
+  // Map its GTK parent first so the compositor can display both surfaces.
+  if (GDK_IS_WAYLAND_DISPLAY(gtk_widget_get_display(GTK_WIDGET(window)))) {
+    gtk_widget_show(GTK_WIDGET(window));
+  }
+#endif
   gtk_widget_realize(GTK_WIDGET(view));
   g_message("flutter_servo: linux runner realized Flutter view");
 
