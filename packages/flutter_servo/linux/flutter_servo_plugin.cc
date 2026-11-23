@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <flutter_linux/flutter_linux.h>
 #include <gtk/gtk.h>
+#include <epoxy/egl.h>
+#if GTK_MAJOR_VERSION == 3 && defined(GDK_WINDOWING_X11)
+#include <gdk/gdkx.h>
+#endif
 #include <cstring>
 #include <glib-unix.h>
 #include <sys/socket.h>
@@ -59,7 +63,38 @@ static void dispatch_control_events(FlutterServoPlugin* self) {
   }
 }
 
+// GTK3 uses GLX on X11, while Servo binds EGL on the same platform thread.
+// Release each API's binding before returning ownership to the other.
+class ScopedServoGraphics {
+ public:
+  ScopedServoGraphics() {
+#if GTK_MAJOR_VERSION == 3 && defined(GDK_WINDOWING_X11)
+    active_ = GDK_IS_X11_DISPLAY(gdk_display_get_default());
+#endif
+    if (!active_) return;
+    previous_ = gdk_gl_context_get_current();
+    if (previous_) {
+      g_object_ref(previous_);
+      gdk_gl_context_clear_current();
+    }
+  }
+  ~ScopedServoGraphics() {
+    if (!active_) return;
+    EGLDisplay display = eglGetCurrentDisplay();
+    if (display != EGL_NO_DISPLAY)
+      eglMakeCurrent(display, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    if (previous_) {
+      gdk_gl_context_make_current(previous_);
+      g_object_unref(previous_);
+    }
+  }
+ private:
+  bool active_ = false;
+  GdkGLContext* previous_ = nullptr;
+};
+
 static gboolean pump_servo_frame(gpointer user_data) {
+  ScopedServoGraphics graphics;
   FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(user_data);
   self->frame_source_id = 0;
   if (self->session != nullptr && self->texture != nullptr &&
@@ -741,6 +776,7 @@ static FlMethodResponse* handle_notify_key_event(FlutterServoPlugin* self,
 }
 
 static void flutter_servo_plugin_dispose(GObject* object) {
+  ScopedServoGraphics graphics;
   FlutterServoPlugin* self = FLUTTER_SERVO_PLUGIN(object);
   if (self->wake_source_id != 0) {
     g_source_remove(self->wake_source_id);
@@ -797,6 +833,7 @@ static void flutter_servo_plugin_init(FlutterServoPlugin* self) {
 
 static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
                            gpointer user_data) {
+  ScopedServoGraphics graphics;
   FlutterServoPlugin* plugin = FLUTTER_SERVO_PLUGIN(user_data);
   g_autoptr(FlMethodResponse) response = nullptr;
   const gchar* method = fl_method_call_get_name(method_call);
