@@ -58,6 +58,29 @@ including switching demos while media is active and closing the app afterward.
 - Ctrl+D toggles the current page's bookmark.
 - Ctrl+Plus, Ctrl+Minus, and Ctrl+0 adjust and reset page zoom.
 
+## Browser Window Captures
+
+On Linux, build the example, then run the capture helper from the repository
+root. It requires Xvfb, `xvfb-run`, `xdotool`, and ImageMagick's `import`.
+
+```bash
+bundle=packages/flutter_servo/example/build/linux/x64/release/bundle
+bash tools/capture_browser_window.sh "$bundle/flutter_servo_example" build/rendering.png
+bash tools/capture_browser_window.sh "$bundle/flutter_servo_example" docs/screenshots/cbc.png https://www.cbc.ca/
+```
+
+Use `build/linux-gtk4/x64/release/bundle` under the example for GTK4. The
+default serves a local HTML fixture with CSS Grid, Flexbox, transforms, and
+SVG. It requires Python 3 and ImageMagick's `magick` or `convert` and fails unless the
+captured frame contains all three expected color markers. This catches blank
+or missing content, but does not verify layout geometry. Passing a URL
+skips the marker check for marketing captures of external pages. Both
+modes capture only the launched browser window.
+
+Keep screenshots intended for publication under `docs/screenshots/`.
+Run `git lfs install` before staging them; PNGs in that directory are tracked
+with Git LFS. Local rendering test output can stay under `build/`.
+
 ## Screen Reader Testing
 
 On desktop, Servo's AccessKit tree is projected into Flutter semantics as

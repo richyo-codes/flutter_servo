@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_servo/flutter_servo.dart';
 import 'package:material_ui/material_ui.dart';
@@ -10,11 +12,22 @@ enum _ViewportMode { desktop, mobile }
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await FlutterServo.init();
-  runApp(const ServoBrowserApp());
+  final uri = Uri.tryParse(
+    Platform.environment['FLUTTER_SERVO_START_URL'] ?? '',
+  );
+  final initialUrl =
+      uri != null &&
+          (uri.scheme == 'https' || uri.scheme == 'http') &&
+          uri.host.isNotEmpty
+      ? uri.toString()
+      : null;
+  runApp(ServoBrowserApp(initialUrl: initialUrl));
 }
 
 class ServoBrowserApp extends StatelessWidget {
-  const ServoBrowserApp({super.key});
+  const ServoBrowserApp({super.key, this.initialUrl});
+
+  final String? initialUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -32,13 +45,15 @@ class ServoBrowserApp extends StatelessWidget {
         scaffoldBackgroundColor: chrome,
         useMaterial3: true,
       ),
-      home: const BrowserPage(),
+      home: BrowserPage(initialUrl: initialUrl),
     );
   }
 }
 
 class BrowserPage extends StatefulWidget {
-  const BrowserPage({super.key});
+  const BrowserPage({super.key, this.initialUrl});
+
+  final String? initialUrl;
 
   @override
   State<BrowserPage> createState() => _BrowserPageState();
@@ -47,14 +62,14 @@ class BrowserPage extends StatefulWidget {
 class _BrowserPageState extends State<BrowserPage> {
   static const _bookmarksKey = 'browser.bookmarks';
 
-  final TextEditingController _addressController = TextEditingController(
-    text: FlutterServo.mvpInitialUrl(),
+  late final TextEditingController _addressController = TextEditingController(
+    text: _content,
   );
   final FocusNode _addressFocusNode = FocusNode();
   final FocusNode _browserFocusNode = FocusNode();
   final Set<PhysicalKeyboardKey> _handledShortcutKeys = {};
 
-  String _content = FlutterServo.mvpInitialUrl();
+  late String _content = widget.initialUrl ?? FlutterServo.mvpInitialUrl();
   FlutterServoContentType _contentType = FlutterServoContentType.url;
   int _reloadRevision = 0;
   int _zoomPercent = 100;

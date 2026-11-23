@@ -22,6 +22,30 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  testServoWidgets('opens the configured startup URL', (tester) async {
+    const url = 'https://example.org/start';
+    final calls = <MethodCall>[];
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+          calls.add(call);
+          if (call.method == 'createTexture' ||
+              call.method == 'resizeTexture') {
+            return 1;
+          }
+          return true;
+        });
+    await tester.pumpWidget(const ServoBrowserApp(initialUrl: url));
+    await tester.pump();
+
+    final navigation = calls.singleWhere((call) => call.method == 'setUrl');
+    expect((navigation.arguments as List).first, url);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      url,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
   for (final demo in BrowserDemo.values) {
     testServoWidgets('opens ${demo.id} as bundled HTML on a phone viewport', (
       tester,
