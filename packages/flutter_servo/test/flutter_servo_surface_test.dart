@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ui' show SemanticsAction;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/services.dart';
@@ -802,6 +803,77 @@ void main() {
     await tester.pump(const Duration(milliseconds: 40));
 
     expect(refreshAttempts, 1);
+  });
+
+  testServoWidgets('exposes page semantics and routes a screen reader action', (
+    tester,
+  ) async {
+    final responses = <Object?>[];
+    final messenger =
+        TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'createTexture') return 1;
+      if (call.method == 'respondToControl') {
+        responses.add(jsonDecode(call.arguments as String));
+        return true;
+      }
+      return null;
+    });
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: FlutterServoSurface.html(
+          content: '<button>Continue</button>',
+          fallback: SizedBox(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      responses,
+      contains(equals({'type': 'accessibilityEnabled', 'enabled': true})),
+    );
+    await messenger.handlePlatformMessage(
+      channel.name,
+      const StandardMethodCodec().encodeMethodCall(
+        const MethodCall('frameAvailable'),
+      ),
+      (_) {},
+    );
+    await sendControl({
+      'type': 'accessibilityTree',
+      'nodes': [
+        {
+          'id': 'tree:1',
+          'role': 'Heading',
+          'label': 'Form title',
+          'rect': [10, 10, 110, 40],
+        },
+        {
+          'id': 'tree:2',
+          'role': 'Button',
+          'label': 'Continue',
+          'rect': [10, 50, 110, 80],
+          'clickable': true,
+        },
+      ],
+    });
+    await tester.pump();
+    expect(find.bySemanticsLabel('Form title'), findsOneWidget);
+    final button = tester.getSemantics(find.bySemanticsLabel('Continue'));
+    expect(button.getSemanticsData().hasAction(SemanticsAction.tap), isTrue);
+    button.owner!.performAction(button.id, SemanticsAction.tap);
+    await tester.pump();
+    expect(responses.last, {
+      'type': 'accessibilityAction',
+      'id': 'tree:2',
+      'action': 'Click',
+    });
+
+    await sendControl({'type': 'accessibilityTree', 'nodes': []});
+    await tester.pump();
+    expect(find.bySemanticsLabel('Continue'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(responses.last, {'type': 'accessibilityEnabled', 'enabled': false});
   });
 
   testServoWidgets('coalesces live resize and forwards DPI and page zoom', (

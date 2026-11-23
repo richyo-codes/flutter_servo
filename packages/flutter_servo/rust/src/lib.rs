@@ -1,5 +1,7 @@
 pub mod api;
 #[cfg(feature = "servo-engine")]
+mod accessibility;
+#[cfg(feature = "servo-engine")]
 mod embedder_controls;
 mod frb_generated;
 #[cfg(feature = "servo-engine")]

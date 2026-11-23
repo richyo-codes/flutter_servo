@@ -4762,6 +4762,7 @@ dependencies = [
 name = "rust_lib_flutter_servo"
 version = "0.1.0"
 dependencies = [
+ "accesskit",
  "dpi",
  "euclid",
  "flutter_rust_bridge",

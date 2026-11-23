@@ -74,6 +74,10 @@ jobs:
         env:
           REUSE_NATIVE_ASSETS: ${{ inputs.reuse_native_assets }}
         run: ./tools/build_windows.ps1 -Configuration Release -Probe -Prebuilt:($env:REUSE_NATIVE_ASSETS -eq 'true')
+      - name: Test Servo accessibility
+        timeout-minutes: 2
+        shell: pwsh
+        run: python tools/test_servo_accessibility.py packages/flutter_servo/example/build/windows/x64/runner/Release/rust_lib_flutter_servo.dll
       - name: Archive browser bundle
         shell: pwsh
         env:

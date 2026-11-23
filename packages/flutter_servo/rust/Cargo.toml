@@ -10,6 +10,7 @@ crate-type = ["cdylib", "staticlib"]
 [features]
 default = []
 servo-engine = [
+    "dep:accesskit",
     "dep:dpi",
     "dep:percent-encoding",
     "dep:servo",
@@ -22,6 +23,7 @@ servo-engine = [
 ]
 
 [dependencies]
+accesskit = { version = "0.24.1", optional = true }
 flutter_rust_bridge = "=2.13.0"
 keyboard-types = "0.8.3"
 serde_json = "1"

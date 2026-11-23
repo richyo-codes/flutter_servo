@@ -55,6 +55,20 @@ This path still copies on the GPU; it is not zero-copy. Run
 same-display and cross-display transfers on your driver. Software rendering may
 not support cross-display export and will fall back to CPU transfer in the app.
 
+## Screen Reader Testing
+
+On desktop, enabling screen-reader semantics exposes Servo page content
+alongside the Flutter browser controls. The bridge projects Servo's AccessKit
+updates into Flutter semantics, including headings, text, and links. Click
+actions go back to Servo. This first pass flattens page nodes into document
+order. The pinned Servo revision has limited form-control semantics and
+implements click as its only accessibility action.
+
+Try the bundled documentation demo with NVDA on Windows or Orca on Linux.
+Navigate from the toolbar into **Web content**, read a heading and paragraph,
+and activate a link. Then navigate to another page and check that the old
+content disappears from the tree.
+
 ## Isolation
 
 Desktop Servo runs inside the host application process. The Linux Flatpak

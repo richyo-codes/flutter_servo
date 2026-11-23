@@ -31,6 +31,7 @@ mod imp {
     };
     use url::Url;
 
+    use crate::accessibility::PageAccessibility;
     use super::{c_char, c_string, c_void, slice, BYTES_PER_PIXEL};
 
     fn log_elapsed_ms() -> u128 {
@@ -86,6 +87,7 @@ mod imp {
         frame_epoch: Cell<u64>,
         crashed: Cell<bool>,
         controls: RefCell<crate::embedder_controls::Controls>,
+        accessibility: RefCell<PageAccessibility>,
     }
 
     impl Default for SessionDelegate {
@@ -98,6 +100,7 @@ mod imp {
                 frame_epoch: Cell::new(0),
                 crashed: Cell::new(false),
                 controls: RefCell::new(crate::embedder_controls::Controls::default()),
+                accessibility: RefCell::default(),
             }
         }
     }
@@ -124,6 +127,10 @@ mod imp {
     }
 
     impl WebViewDelegate for SessionDelegate {
+        fn notify_accessibility_tree_update(&self, _webview: WebView, update: accesskit::TreeUpdate) {
+            self.accessibility.borrow_mut().update(update);
+        }
+
         fn show_embedder_control(&self, _webview: WebView, control: servo::EmbedderControl) {
             if !self.crashed.get() {
                 self.controls.borrow_mut().show(control);
@@ -163,6 +170,7 @@ mod imp {
                 eprintln!("{backtrace}");
             }
             self.crashed.set(true);
+            self.accessibility.borrow_mut().set_root(None);
             self.controls.borrow_mut().reset();
             self.animating.set(false);
             self.frame_ready.set(false);
@@ -179,6 +187,7 @@ mod imp {
         size: PhysicalSize<u32>,
         display_scale: f32,
         page_zoom: f32,
+        accessibility_enabled: Cell<bool>,
         rendered_frame_epoch: u64,
         wake_pending: Arc<AtomicBool>,
         wake_callback: Arc<crate::wake_callback::WakeCallback>,
@@ -228,6 +237,7 @@ mod imp {
             );
 
             let mut preferences = Preferences::default();
+            preferences.accessibility_enabled = true;
             if let Some(http_proxy_uri) = proxy_overrides.http_proxy_uri {
                 preferences.network_http_proxy_uri = http_proxy_uri;
             }
@@ -270,6 +280,7 @@ mod imp {
                 size,
                 display_scale: 1.0,
                 page_zoom: 1.0,
+                accessibility_enabled: Cell::new(false),
                 rendered_frame_epoch: 0,
                 wake_pending,
                 wake_callback,
@@ -627,6 +638,9 @@ mod imp {
                         .build();
                     webview.resize(self.size);
                     webview.set_page_zoom(self.page_zoom);
+                    let accessibility_root =
+                        webview.set_accessibility_active(self.accessibility_enabled.get());
+                    delegate.accessibility.borrow_mut().set_root(accessibility_root);
                     self.webview = Some(webview);
                     self.delegate = delegate;
                     self.rendered_frame_epoch = 0;
@@ -1015,11 +1029,9 @@ mod imp {
         let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
             return null_mut();
         };
-        session
-            .delegate
-            .controls
-            .borrow_mut()
-            .take_event()
+        let control_event = session.delegate.controls.borrow_mut().take_event();
+        control_event
+            .or_else(|| session.delegate.accessibility.borrow_mut().take_event())
             .and_then(|event| std::ffi::CString::new(event).ok())
             .map_or(null_mut(), std::ffi::CString::into_raw)
     }
@@ -1046,6 +1058,32 @@ mod imp {
             return false;
         };
         match value["type"].as_str() {
+            Some("accessibilityEnabled") => {
+                let Some(enabled) = value["enabled"].as_bool() else {
+                    return false;
+                };
+                session.accessibility_enabled.set(enabled);
+                let root = session
+                    .webview
+                    .as_ref()
+                    .filter(|_| !session.delegate.crashed.get())
+                    .and_then(|webview| webview.set_accessibility_active(enabled));
+                session.delegate.accessibility.borrow_mut().set_root(root);
+                true
+            }
+            Some("accessibilityAction") => {
+                if !session.accessibility_enabled.get() || session.delegate.crashed.get() {
+                    return false;
+                }
+                let Some(servo) = session.servo.as_ref() else {
+                    return false;
+                };
+                let Some(action) = session.delegate.accessibility.borrow().action(&value) else {
+                    return false;
+                };
+                servo.forward_accessibility_action(action);
+                true
+            }
             Some("contextMenu") => {
                 let Some(id) = value["id"].as_u64() else {
                     return false;

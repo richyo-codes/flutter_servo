@@ -3,10 +3,12 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'servo_text_input.dart';
+import 'servo_page_semantics.dart';
 import 'backend.dart';
 import 'mobile_webview.dart';
 
@@ -187,6 +189,8 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   int? _menuId;
   PopupRoute<int>? _menuRoute;
   final Set<PhysicalKeyboardKey> _imeKeys = {};
+  List<Object?> _accessibilityNodes = const [];
+  bool _accessibilityEnabled = false;
   late final ServoTextInput _textInput = ServoTextInput(
     sendComposition: (id, state, text) => _respondToControl({
       'type': 'composition',
@@ -204,6 +208,24 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     await _channel.invokeMethod<bool>('respondToControl', jsonEncode(response));
   }
 
+  void _onSemanticsChanged() {
+    if (!SemanticsBinding.instance.semanticsEnabled &&
+        _accessibilityNodes.isNotEmpty) {
+      setState(() => _accessibilityNodes = const []);
+    }
+    _scheduleTextureSync();
+  }
+
+  Future<void> _syncAccessibility() async {
+    final enable = SemanticsBinding.instance.semanticsEnabled;
+    if (enable == _accessibilityEnabled) return;
+    final accepted = await _channel.invokeMethod<bool>(
+      'respondToControl',
+      jsonEncode({'type': 'accessibilityEnabled', 'enabled': enable}),
+    );
+    if (mounted && accepted == true) _accessibilityEnabled = enable;
+  }
+
   void _hideMenu() {
     final route = _menuRoute;
     _menuRoute = null;
@@ -213,6 +235,11 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   void _handleControl(Map<String, dynamic> event) {
     switch (event['type']) {
+      case 'accessibilityTree':
+        if (event['nodes'] case final List<Object?> nodes
+            when SemanticsBinding.instance.semanticsEnabled) {
+          setState(() => _accessibilityNodes = nodes);
+        }
       case 'contextMenu':
         unawaited(_showPageMenu(event));
       case 'hideContextMenu':
@@ -309,6 +336,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   @override
   void initState() {
     super.initState();
+    SemanticsBinding.instance.addSemanticsEnabledListener(_onSemanticsChanged);
     _loadStateListeners.add(this);
     if (_loadStateListeners.length == 1) {
       _channel.setMethodCallHandler(_handlePlatformMethodCall);
@@ -317,6 +345,9 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   @override
   void dispose() {
+    SemanticsBinding.instance.removeSemanticsEnabledListener(
+      _onSemanticsChanged,
+    );
     _hideMenu();
     _textInput.close();
     _loadTimeoutTimer?.cancel();
@@ -326,6 +357,13 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     _pendingWheelPosition = null;
     _loadStateListeners.remove(this);
     if (_loadStateListeners.isEmpty) {
+      if (_accessibilityEnabled) {
+        unawaited(
+          _respondToControl({'type': 'accessibilityEnabled', 'enabled': false})
+              .onError<PlatformException>((_, _) {})
+              .onError<MissingPluginException>((_, _) {}),
+        );
+      }
       _channel.setMethodCallHandler(null);
     }
     _focusNode.dispose();
@@ -648,6 +686,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             }
           }
         }
+        if (mounted) await _syncAccessibility();
       } on MissingPluginException {
         if (!mounted) {
           return;
@@ -852,6 +891,22 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
                   children: [
                     Texture(textureId: _textureId!),
                     if (!_hasFrame) widget.fallback,
+                    if (_hasFrame &&
+                        !_loadFailed &&
+                        _accessibilityNodes.isNotEmpty)
+                      ServoPageSemantics(
+                        nodes: _accessibilityNodes,
+                        displayScale: devicePixelRatio,
+                        onActivate: widget.enableInputPlumbing
+                            ? (id) => unawaited(
+                                _respondToControl({
+                                  'type': 'accessibilityAction',
+                                  'id': id,
+                                  'action': 'Click',
+                                }),
+                              )
+                            : null,
+                      ),
                   ],
                 ),
               );
