@@ -27,6 +27,17 @@ FlutterServoSurface.url(
 See the [embedding package guide](packages/flutter_servo/README.md) for API
 usage and [native build setup](docs/native-builds.md) for build options.
 
+## Precompiled Servo
+
+Compiling Servo from source is slow. We publish precompiled Linux and Windows
+x64 libraries so Flutter apps can skip that Rust build. Downloads are opt-in
+via `prebuilt_native_tag`; Flutter still builds the app and its desktop plugin.
+
+The first pub.dev upload hit a restriction on helper files under `hook/`.
+The helper has moved out of that directory. Until the upload is confirmed,
+use the [Git dependency and matching binary release](docs/native-builds.md#precompiled-libraries).
+There is no announced pub.dev release date.
+
 ## Example Browser
 
 The [example browser](packages/flutter_servo/example) is a standalone Flutter
