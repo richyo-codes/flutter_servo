@@ -1,10 +1,14 @@
 # GitHub Browser Builds
 
-GitHub Actions builds and tests the package and browser on pushes, pull requests,
-and manual runs of **Browser CI**. The GTK4 job produces an x86_64 release RPM
-and a separate browser bundle tarball preserving executable permissions.
-Artifacts appear under the run's **Artifacts**
-section and are retained for 14 days.
+**Browser CI** runs on pushes, pull requests, and manual runs. After the shared
+checks pass, it builds the same example browser for Linux x64 and Windows x64.
+Both bundles contain the login, licenses, documentation, and video demos. Linux
+uploads a GTK4 tarball and RPM. Windows uploads a ZIP. Downloads appear under
+the run's **Artifacts** section and are retained for 14 days.
+
+**Servo Native Assets** uploads separate Linux x64 and Windows x64 archives for
+embedders. Both variants build on native-related pushes and pull requests,
+manual runs, and `native-v*` tags.
 
 The build uses the public Flutter GTK4 fork and precompiled engine artifacts:
 
@@ -51,7 +55,8 @@ and the bundle's system libraries. Use `--bundle-dir` and `--out-dir` to select
 other paths. The original bundle is left untouched.
 
 `v*` tags trigger **Browser Release**, which runs the same Flutter, Rust, and
-packaging checks as CI before building the RPM. The release workflow can also
+packaging checks as CI before building the Linux and Windows bundles and GTK4
+RPM. The release workflow can also
 be run manually with an existing tag. It resolves the tag once, tests and
 builds that commit, and verifies that the tag still names that commit before
 publishing. Build provenance records the checked-out commit, including when a

@@ -119,6 +119,9 @@ jobs:
         run: |
           bundle=packages/flutter_servo/example/build/linux-gtk4/x64/release/bundle
           bash tools/verify_gtk4_bundle.sh "$bundle"
+          for demo in login licenses documentation video; do
+            test -s "$bundle/data/flutter_assets/assets/demos/$demo.html"
+          done
           xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 \
             bash tools/run_native_session_probe.sh \
             "$GITHUB_WORKSPACE/$bundle/lib/librust_lib_flutter_servo.so" --input-controls

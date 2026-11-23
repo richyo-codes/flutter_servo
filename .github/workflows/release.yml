@@ -47,15 +47,22 @@ jobs:
     with:
       checkout_ref: ${{ needs.validate.outputs.commit }}
 
-  build:
+  linux:
     needs: [validate, tests]
     uses: ./.github/workflows/build-gtk4-rpm.yml
     with:
       checkout_ref: ${{ needs.validate.outputs.commit }}
       artifact_version: ${{ needs.validate.outputs.tag }}
 
+  windows:
+    needs: [validate, tests]
+    uses: ./.github/workflows/build-windows.yml
+    with:
+      checkout_ref: ${{ needs.validate.outputs.commit }}
+      artifact_version: ${{ needs.validate.outputs.tag }}
+
   publish:
-    needs: [validate, build]
+    needs: [validate, linux, windows]
     if: vars.BROWSER_LICENSE != '' && vars.BROWSER_LICENSE != 'LicenseRef-Unspecified'
     runs-on: ubuntu-24.04
     permissions:
@@ -63,10 +70,10 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: flutter-servo-browser-linux-x86_64-gtk4-rpm-*
+          pattern: flutter-servo-browser-*
           path: release-assets
           merge-multiple: true
-      - name: Publish tagged RPM release
+      - name: Publish tagged Linux and Windows browser releases
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -75,8 +82,15 @@ jobs:
           RELEASE_COMMIT: ${{ needs.validate.outputs.commit }}
         run: |
           test "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" = "$RELEASE_COMMIT"
-          mapfile -t assets < <(find release-assets -type f \( -name '*.rpm' -o -name '*.sha256' -o -name '*.requires.txt' \))
-          if (( ${#assets[@]} == 0 )); then exit 1; fi
+          shopt -s nullglob
+          rpm=(release-assets/*.rpm)
+          linux=(release-assets/flutter-servo-browser-linux-x86_64-gtk4-*.tar.gz)
+          windows=(release-assets/flutter-servo-browser-*-windows-x64-release.zip)
+          if (( ${#rpm[@]} == 0 || ${#linux[@]} != 1 || ${#windows[@]} != 1 )); then
+            echo "Expected the Linux RPM, Linux bundle, and Windows bundle" >&2
+            exit 1
+          fi
+          assets=("${rpm[@]}" "${linux[@]}" "${windows[@]}" release-assets/*.sha256 release-assets/*.requires.txt)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" --clobber "${assets[@]}"
           else

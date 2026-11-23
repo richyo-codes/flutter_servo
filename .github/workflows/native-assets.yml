@@ -9,7 +9,15 @@ on:
       - 'packages/flutter_servo/hook/**'
       - 'packages/flutter_servo/rust/**'
       - 'tools/package_native_assets.sh'
+      - 'tools/setup_windows.ps1'
   workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/native-assets.yml'
+      - 'packages/flutter_servo/hook/**'
+      - 'packages/flutter_servo/rust/**'
+      - 'tools/package_native_assets.sh'
+      - 'tools/setup_windows.ps1'
 
 permissions:
   contents: read
@@ -19,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: ${{ fromJSON(github.event_name == 'push' && github.ref_type == 'branch' && '["linux-x64"]' || '["linux-x64","windows-x64"]') }}
+        platform: [linux-x64, windows-x64]
     runs-on: ${{ matrix.platform == 'linux-x64' && 'ubuntu-latest' || 'windows-2022' }}
     timeout-minutes: 180
     env:

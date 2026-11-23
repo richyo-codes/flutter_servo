@@ -2,6 +2,15 @@ name: Build Windows Browser
 
 on:
   workflow_call:
+    inputs:
+      checkout_ref:
+        description: Commit to build; defaults to the caller's ref
+        type: string
+        default: ''
+      artifact_version:
+        description: Version for the browser archive
+        type: string
+        default: ''
   workflow_dispatch:
 
 permissions:
@@ -20,6 +29,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ inputs.checkout_ref }}
       - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
@@ -47,11 +57,18 @@ jobs:
         run: ./tools/build_windows.ps1 -Configuration Release -Probe
       - name: Archive browser bundle
         shell: pwsh
+        env:
+          ARTIFACT_VERSION: ${{ inputs.artifact_version }}
         run: |
-          $version = (git describe --tags --always --dirty).Trim()
+          $version = $env:ARTIFACT_VERSION
+          if (-not $version) { $version = (git describe --tags --always --dirty).Trim() }
           $name = "flutter-servo-browser-$version-windows-x64-release"
           "ARTIFACT_NAME=$name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $bundle = 'packages/flutter_servo/example/build/windows/x64/runner/Release'
+          foreach ($demo in @('login', 'licenses', 'documentation', 'video')) {
+            $asset = Get-Item "$bundle/data/flutter_assets/assets/demos/$demo.html"
+            if ($asset.Length -eq 0) { throw "Bundled demo $demo is empty" }
+          }
           @("Commit: $(git rev-parse HEAD)", "Flutter: $(flutter --version)") | Set-Content "$bundle/BUILD_INFO.txt"
           Compress-Archive -Path "$bundle/*" -DestinationPath "$name.zip"
       - uses: actions/upload-artifact@v4

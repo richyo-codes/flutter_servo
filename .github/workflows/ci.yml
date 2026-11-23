@@ -22,4 +22,5 @@ jobs:
     uses: ./.github/workflows/build-gtk4-rpm.yml
 
   windows:
+    needs: tests
     uses: ./.github/workflows/build-windows.yml

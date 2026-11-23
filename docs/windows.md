@@ -101,7 +101,7 @@ especially IME, clipboard, and shutdown, still needs validation on Windows.
 
 ## CI
 
-`Build Windows Browser` can run manually or through `Browser CI`. It builds a
-release bundle on `windows-2022`, runs the native probe, and uploads a versioned
-ZIP plus build logs. It produces test artifacts; it does not publish a Windows
-installer or a signed release.
+`Build Windows Browser` can run manually or through `Browser CI` and
+`Browser Release`. It builds a release bundle on `windows-2022`, runs the native
+probe, and uploads a versioned ZIP plus build logs. Tagged browser releases
+include the ZIP when release publishing is enabled.
