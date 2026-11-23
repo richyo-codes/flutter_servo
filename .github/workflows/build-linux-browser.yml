@@ -117,6 +117,8 @@ jobs:
         shell: bash
         run: |
           bundle="$BUNDLE_DIR"
+          source tools/linux_browser_packaging.sh
+          prune_mobile_native_assets "$bundle"
           bash tools/verify_linux_bundle.sh "$bundle" "$GTK_VARIANT"
           for demo in login licenses documentation video; do
             test -s "$bundle/data/flutter_assets/assets/demos/$demo.html"

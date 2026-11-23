@@ -59,6 +59,7 @@ class BrowserRpmTest(unittest.TestCase):
                  "-o", str(bundle / f"lib/{name}.so")],
                 input=source, text=True, check=True,
             )
+        shutil.copyfile(bundle / "lib/libapp.so", bundle / "lib/libdartjni.so")
         return bundle
 
     def test_gtk3_rpm(self):
@@ -96,6 +97,7 @@ class BrowserRpmTest(unittest.TestCase):
                 extracted = self.root / f"extracted-{variant}"
                 subprocess.run(["dpkg-deb", "-x", str(deb), str(extracted)], check=True)
                 binary = extracted / f"usr/lib/flutter-servo-browser-{variant}/flutter_servo_example"
+                self.assertFalse((binary.parent / "lib/libdartjni.so").exists())
                 self.assertEqual(run(str(binary)).returncode, 0)
 
     @classmethod
@@ -117,6 +119,7 @@ class BrowserRpmTest(unittest.TestCase):
         files = run("rpm", "-qpl", str(rpm)).stdout
         self.assertIn("/usr/lib64/flutter-servo-browser-gtk4/data/flutter_assets", files)
         self.assertIn("/usr/bin/flutter-servo-browser-gtk4", files)
+        self.assertNotIn("libdartjni.so", files)
         requires = run("rpm", "-qp", "--requires", str(rpm)).stdout
         self.assertIn("gtk4", requires)
         self.assertIn("libgtk-4.so.1", requires)

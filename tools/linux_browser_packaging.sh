@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
 
+prune_mobile_native_assets() {
+  # The Android WebView dependency can emit JNI assets for Linux as well.
+  # The desktop browser uses Servo and does not start a JVM.
+  rm -f -- "$1/lib/libdartjni.so"
+}
+
 # Patch a copy so the original Flutter output stays intact.
 stage_browser_bundle() {
   local source=$1 destination=$2 variant=$3 library
   mkdir -p "$destination"
   cp -a "$source/." "$destination/"
+  prune_mobile_native_assets "$destination"
   # shellcheck disable=SC2016
   patchelf --set-rpath '$ORIGIN/lib' "$destination/flutter_servo_example"
   while IFS= read -r -d '' library; do
