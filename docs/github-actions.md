@@ -67,6 +67,24 @@ manual release targets a tag different from the workflow's branch.
 The browser and embedding package use the checked-in MIT licenses. No
 repository license variable is needed to publish a release.
 
+## Dart Package Releases
+
+Publish the first version (`0.1.2`) manually from `packages/flutter_servo`
+using `flutter pub publish`. First review `flutter pub publish --dry-run`:
+the exact Flutter Rust Bridge pins intentionally produce warnings because
+the generated bridge requires a matching runtime.
+Then enable GitHub Actions publishing on the package's pub.dev Admin tab:
+repository `richyo-codes/flutter_servo`, tag pattern `dart-v{{version}}`, and
+required GitHub environment `pub.dev`. Create that environment in GitHub
+before publishing, and protect it with reviewers if available.
+
+For subsequent versions, update the package pubspec and changelog, then push
+the matching `dart-vX.Y.Z` tag. This publishes the Dart package only. Browser
+bundles still use `vX.Y.Z` and native archives use `native-vX.Y.Z`.
+The package builds Servo from source by default. Set `prebuilt_native_tag`
+to use a matching GitHub release without Cargo, as described in
+[Native Servo Builds](native-builds.md).
+
 Workflow files are in `.github/workflows/`; they run when this repository is
 hosted or mirrored on GitHub with Actions enabled. No remote workflow has been
 dispatched by adding these files locally.

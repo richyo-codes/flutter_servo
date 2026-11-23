@@ -1,3 +1,5 @@
-## 0.0.1
+## 0.1.2
 
-* TODO: Describe initial release.
+* Initial release of the Servo embedding widget for Linux and Windows.
+* Supports navigation, pointer and keyboard input, page zoom, and accessibility.
+* Android and iOS use the platform WebView fallback.

@@ -1,0 +1,43 @@
+name: Publish Dart package
+
+on:
+  push:
+    tags: ['dart-v[0-9]+.[0-9]+.[0-9]+', 'dart-v[0-9]+.[0-9]+.[0-9]+-*']
+
+permissions:
+  contents: read
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check package version against tag
+        shell: bash
+        run: |
+          version=$(sed -n 's/^version: //p' packages/flutter_servo/pubspec.yaml)
+          if [[ -z "$version" || "$GITHUB_REF_NAME" != "dart-v$version" ]]; then
+            echo "Expected tag dart-v$version, got $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
+
+  publish:
+    needs: validate-tag
+    runs-on: ubuntu-latest
+    environment: pub.dev
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: packages/flutter_servo
+    steps:
+      - uses: actions/checkout@v6
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - uses: dart-lang/setup-dart@v1
+      - run: flutter pub get
+      # The generated bridge requires an exact runtime version. Pub's
+      # dry-run treats exact dependency pins as warnings.
+      - run: flutter pub publish --force

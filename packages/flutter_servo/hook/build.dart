@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter_rust_bridge_hooks/flutter_rust_bridge_hooks.dart';
 import 'package:code_assets/code_assets.dart';
 
+import 'prebuilt.dart';
+
 void main(List<String> args) async {
   await build(args, (input, output) async {
     if (!input.config.buildCodeAssets) return;
@@ -17,18 +19,50 @@ void main(List<String> args) async {
       throw ArgumentError('rust_release_line_tables must be a boolean.');
     }
     final prebuiltDirectory = input.userDefines['prebuilt_native_directory'];
-    if (prebuiltDirectory != null) {
+    final prebuiltTag = input.userDefines['prebuilt_native_tag'];
+    if (prebuiltDirectory != null || prebuiltTag != null) {
+      if (prebuiltDirectory != null && prebuiltTag != null) {
+        throw ArgumentError(
+          'Choose either prebuilt_native_directory or prebuilt_native_tag.',
+        );
+      }
+      if (debugRust || lineTables == true) {
+        throw ArgumentError(
+          'Rust debug builds and line tables require a source build.',
+        );
+      }
+      final target = input.config.code;
+      if (target.targetArchitecture != Architecture.x64) {
+        throw UnsupportedError(
+          'Prebuilt Servo libraries require an x64 target.',
+        );
+      }
+      final platform = switch (target.targetOS) {
+        OS.linux => PrebuiltPlatform.linux,
+        OS.windows => PrebuiltPlatform.windows,
+        _ => throw UnsupportedError(
+          'No prebuilt Servo library for ${target.targetOS}.',
+        ),
+      };
+      if (prebuiltTag != null) {
+        if (prebuiltTag is! String) {
+          throw ArgumentError(
+            'prebuilt_native_tag must be a native release tag.',
+          );
+        }
+        final directory = await fetchPrebuilt(
+          tag: prebuiltTag,
+          platform: platform,
+          cache: Directory.fromUri(
+            input.outputDirectoryShared.resolve('release-binaries/'),
+          ),
+        );
+        bundlePrebuilt(input, output, directory, platform);
+        return;
+      }
       if (prebuiltDirectory is! String || prebuiltDirectory.trim().isEmpty) {
         throw ArgumentError(
           'prebuilt_native_directory must be a directory path.',
-        );
-      }
-      if (debugRust) {
-        throw ArgumentError('Prebuilt native libraries are release builds.');
-      }
-      if (lineTables == true) {
-        throw ArgumentError(
-          'rust_release_line_tables requires a source build.',
         );
       }
       final directory = Directory(prebuiltDirectory);
@@ -37,7 +71,7 @@ void main(List<String> args) async {
           'prebuilt_native_directory must be an absolute path.',
         );
       }
-      bundlePrebuilt(input, output, directory);
+      bundlePrebuilt(input, output, directory, platform);
       return;
     }
     final crate = input.packageRoot.resolve('rust/');
@@ -75,19 +109,9 @@ void bundlePrebuilt(
   BuildInput input,
   BuildOutputBuilder output,
   Directory directory,
+  PrebuiltPlatform platform,
 ) {
-  final target = input.config.code;
-  if (target.targetArchitecture != Architecture.x64) {
-    throw UnsupportedError('Prebuilt Servo libraries require an x64 target.');
-  }
-  final libraries = switch (target.targetOS) {
-    OS.linux => ['librust_lib_flutter_servo.so'],
-    OS.windows => ['rust_lib_flutter_servo.dll', 'libEGL.dll', 'libGLESv2.dll'],
-    _ => throw UnsupportedError(
-      'No prebuilt Servo library for ${target.targetOS}.',
-    ),
-  };
-  for (final (index, name) in libraries.indexed) {
+  for (final (index, name) in platform.libraries.indexed) {
     final file = File.fromUri(directory.uri.resolve(name));
     if (!file.existsSync()) {
       throw StateError('Missing prebuilt native library: ${file.path}');

@@ -42,7 +42,22 @@ Check `BUILD_INFO.txt` after extraction and verify the archive against its
 require compatible system libraries. The Windows archive includes the matching ANGLE
 DLLs. Flutter still builds the small desktop plugin and application runner.
 
-Set the extracted directory in your application's `pubspec.yaml`:
+To download and cache a matching GitHub release at build time, set the tag
+in your application's `pubspec.yaml`:
+
+```yaml
+hooks:
+  user_defines:
+    flutter_servo:
+      prebuilt_native_tag: native-v0.1.2
+```
+
+Use a native tag from the same commit as your Dart package. The hook selects
+the archive for the target OS and architecture and checks its SHA-256
+sidecar before extracting it into Dart's shared hook cache. A requested
+download that fails does not silently fall back to a Rust build.
+
+For offline builds with an archive you already extracted, use this instead:
 
 ```yaml
 hooks:
