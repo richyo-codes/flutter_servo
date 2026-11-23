@@ -48,11 +48,32 @@ Main-frame resource failures fail the load; subresource failures do not.
 - Mobile Native Assets builds skip Rust. No Android NDK Servo build is required.
 - Real OAuth should still use the system browser, not either embedded backend.
 
+Servo provides page context menus, modifier-aware keyboard selection, repeat
+events, and system clipboard support. Flutter forwards IME preedit and Unicode
+commits. Surrounding-text editing, reconversion, and autofill are unimplemented,
+and native candidate-window behavior still needs interactive validation.
+
+## Isolation
+
+Desktop Servo runs inside the host process. The Linux Flatpak confines the
+whole application, with network, display, and GPU access. Per-page isolation
+would require a separate Servo worker and an IPC boundary.
+
+Run a bundled demo without networking using the installed Flatpak:
+
+```bash
+flatpak run --unshare=network com.rnd.flutter_servo_browser
+```
+
 ## Testing
 
 `flutter test` in the package covers platform routing and the mobile adapter with
 a fake WebView platform, including navigation, failure, and disposal. Desktop
 tests explicitly target Linux. These tests do not validate OS rendering or IME.
+
+Run `./tools/test_android.sh` from the repository root to validate the responsive
+browser UI and build an Android debug APK. The output is
+`packages/flutter_servo/example/build/app/outputs/flutter-apk/app-debug.apk`.
 
 Run `flutter run -d <android-device>` from `packages/flutter_servo/example` to
 test the mobile browser. Test HTTPS, bundled demos, keyboard input, back/forward,

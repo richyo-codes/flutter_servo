@@ -49,3 +49,23 @@ native method channel at a phone width, alongside existing browser tests. They
 mock the native renderer and do not prove JavaScript, video decoding, texture
 presentation or real authentication. Perform the interactions above on-device,
 including switching demos while media is active and closing the app afterward.
+
+## Desktop Shortcuts
+
+- Ctrl+L, Ctrl+K, Alt+D, or F6 selects the address bar.
+- Ctrl+R or F5 reloads the page.
+- Alt+Left and Alt+Right go back and forward.
+- Ctrl+D toggles the current page's bookmark.
+- Ctrl+Plus, Ctrl+Minus, and Ctrl+0 adjust and reset page zoom.
+
+## Screen Reader Testing
+
+On desktop, Servo's AccessKit tree is projected into Flutter semantics as
+headings, text, and links. This first pass flattens nodes into document order.
+The pinned Servo version has limited form-control semantics and implements
+click as its only accessibility action.
+
+Try the Documentation demo with NVDA on Windows or Orca on Linux. Navigate
+from the toolbar into **Web content**, read a heading and paragraph, and
+activate a link. Navigate to a different page and check that the old content
+disappears from the tree.
