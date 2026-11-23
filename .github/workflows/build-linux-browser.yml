@@ -32,7 +32,7 @@ jobs:
       BUNDLE_DIR: packages/flutter_servo/example/build/${{ matrix.gtk == 'gtk4' && 'linux-gtk4' || 'linux' }}/x64/release/bundle
       BROWSER_LICENSE: ${{ vars.BROWSER_LICENSE || 'LicenseRef-Unspecified' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ inputs.checkout_ref }}
@@ -64,7 +64,7 @@ jobs:
           channel: stable
           cache: true
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v5
         if: matrix.gtk == 'gtk4'
         with:
           path: ~/.pub-cache
@@ -95,7 +95,7 @@ jobs:
           .fvm/flutter_sdk/bin/flutter config --enable-linux-desktop
           .fvm/flutter_sdk/bin/flutter precache --linux
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: flutter-servo-native-linux-x64-${{ inputs.checkout_ref || github.sha }}
           path: .dart_tool/ci-native-download
@@ -154,7 +154,7 @@ jobs:
             -czf "build/packages/bundle/flutter-servo-browser-linux-x86_64-$GTK_VARIANT-$ARTIFACT_VERSION.tar.gz" .
 
       - name: Upload RPM package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-rpm-${{ env.ARTIFACT_VERSION }}
           path: build/packages/rpm/${{ matrix.gtk }}/
@@ -162,7 +162,7 @@ jobs:
           retention-days: 14
 
       - name: Upload DEB package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-deb-${{ env.ARTIFACT_VERSION }}
           path: build/packages/deb/${{ matrix.gtk }}/
@@ -170,7 +170,7 @@ jobs:
           retention-days: 14
 
       - name: Upload Linux release bundle
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-bundle-${{ env.ARTIFACT_VERSION }}
           path: build/packages/bundle/*.tar.gz
