@@ -22,6 +22,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ inputs.checkout_ref }}
+      - name: Free disk space for the Servo build
+        run: |
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h .
       - uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -58,3 +62,6 @@ jobs:
         run: python3 tools/test_browser_rpm.py
       - name: Check packaging scripts
         run: shellcheck tools/build_browser_rpm.sh tools/install_gtk4_prebuilt_engine.sh tools/verify_gtk4_bundle.sh
+      - name: Report disk usage
+        if: always()
+        run: df -h .
