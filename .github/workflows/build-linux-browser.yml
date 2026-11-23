@@ -25,8 +25,8 @@ jobs:
     timeout-minutes: 180
     env:
       FLUTTER_GTK4_REPOSITORY: https://github.com/richyo-codes/flutter.git
-      FLUTTER_GTK4_SHA: de20cd2c06847dbc887df574c585484c447a257c
-      FLUTTER_PREBUILT_ENGINE_VERSION: f2b4375245d63bdb7007d42b4032e0e8d079780c
+      FLUTTER_GTK4_SHA: dbffa60d521e3c3a9580b47df00fcd4875d493a8
+      FLUTTER_PREBUILT_ENGINE_VERSION: 89573e968cbf3febdf4f07189cc2bef6cbef830b
       FLUTTER_STORAGE_BASE_URL: https://pub-79a02b1963fb4da6b5e4e4816e8b7146.r2.dev
       GTK_VARIANT: ${{ matrix.gtk }}
       BUNDLE_DIR: packages/flutter_servo/example/build/${{ matrix.gtk == 'gtk4' && 'linux-gtk4' || 'linux' }}/x64/release/bundle

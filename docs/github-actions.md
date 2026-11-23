@@ -15,8 +15,8 @@ Use **Servo Native Assets** for a standalone manual build or a `native-v*` tag.
 The GTK3 build uses standard Flutter stable on `ubuntu-latest`. The GTK4 build
 uses the public Flutter GTK4 fork and precompiled engine artifacts:
 
-- Flutter fork revision: `de20cd2c06847dbc887df574c585484c447a257c`
-- Prebuilt engine: `f2b4375245d63bdb7007d42b4032e0e8d079780c`
+- Flutter fork revision: `dbffa60d521e3c3a9580b47df00fcd4875d493a8`
+- Prebuilt engine: `89573e968cbf3febdf4f07189cc2bef6cbef830b`
 - FVM: `4.2.0`
 - Runner: Ubuntu 26.04, x86_64
 
