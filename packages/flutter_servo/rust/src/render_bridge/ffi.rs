@@ -335,7 +335,12 @@ unsafe fn take_control_event(session: *mut c_void) -> *mut c_char {
     let Some(session) = session.cast::<ServoRenderSession>().as_ref() else {
         return null_mut();
     };
-    let control_event = session.delegate.controls.borrow_mut().take_event();
+    let control_event = session
+        .delegate
+        .cursor_update
+        .take()
+        .map(|cursor| serde_json::json!({"type": "cursor", "cursor": cursor}).to_string())
+        .or_else(|| session.delegate.controls.borrow_mut().take_event());
     control_event
         .or_else(|| session.delegate.accessibility.borrow_mut().take_event())
         .and_then(|event| std::ffi::CString::new(event).ok())

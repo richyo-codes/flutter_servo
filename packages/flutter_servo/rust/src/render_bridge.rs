@@ -73,6 +73,7 @@ impl EventLoopWaker for SessionWaker {
 }
 
 struct SessionDelegate {
+    cursor_update: Cell<Option<servo::Cursor>>,
     document_ready: Cell<bool>,
     frame_ready: Cell<bool>,
     load_status: Cell<LoadStatus>,
@@ -86,6 +87,7 @@ struct SessionDelegate {
 impl Default for SessionDelegate {
     fn default() -> Self {
         Self {
+            cursor_update: Cell::new(Some(servo::Cursor::Default)),
             document_ready: Cell::new(false),
             frame_ready: Cell::new(false),
             load_status: Cell::new(LoadStatus::Started),
@@ -100,6 +102,7 @@ impl Default for SessionDelegate {
 
 impl SessionDelegate {
     fn begin_navigation(&self) {
+        self.cursor_update.set(Some(servo::Cursor::Default));
         self.controls.borrow_mut().reset();
         self.document_ready.set(false);
         self.frame_ready.set(false);
@@ -120,6 +123,12 @@ impl SessionDelegate {
 }
 
 impl WebViewDelegate for SessionDelegate {
+    fn notify_cursor_changed(&self, _webview: WebView, cursor: servo::Cursor) {
+        if !self.crashed.get() {
+            self.cursor_update.set(Some(cursor));
+        }
+    }
+
     fn notify_accessibility_tree_update(&self, _webview: WebView, update: accesskit::TreeUpdate) {
         self.accessibility.borrow_mut().update(update);
     }
@@ -163,6 +172,7 @@ impl WebViewDelegate for SessionDelegate {
             eprintln!("{backtrace}");
         }
         self.crashed.set(true);
+        self.cursor_update.set(Some(servo::Cursor::Default));
         self.accessibility.borrow_mut().set_root(None);
         self.controls.borrow_mut().reset();
         self.animating.set(false);

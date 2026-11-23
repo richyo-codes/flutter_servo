@@ -45,6 +45,7 @@ class FlutterServoSurface extends StatefulWidget {
       onLoadStateChanged = config.onLoadStateChanged,
       onLoadProgressChanged = config.onLoadProgressChanged,
       onNavigationStateChanged = config.onNavigationStateChanged,
+      onWheelZoom = config.onWheelZoom,
       onError = config.onError,
       loadTimeout = config.loadTimeout,
       reloadRevision = config.reloadRevision,
@@ -60,6 +61,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
+    this.onWheelZoom,
     this.onError,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
@@ -77,6 +79,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onNavigationStateChanged,
+    this.onWheelZoom,
     this.onError,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
@@ -95,6 +98,10 @@ class FlutterServoSurface extends StatefulWidget {
   final ValueChanged<bool>? onLoadStateChanged;
   final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
   final ValueChanged<FlutterServoNavigationState>? onNavigationStateChanged;
+
+  /// Optional desktop Ctrl+wheel handler: +1 zooms in, -1 zooms out.
+  /// Without a handler, Ctrl+wheel is forwarded to Servo like other scrolling.
+  final ValueChanged<int>? onWheelZoom;
   final ValueChanged<PlatformException>? onError;
 
   /// Maximum wait for completion after native loading starts; null disables it.
@@ -159,6 +166,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'flutter_servo_surface');
   int? _textureId;
   bool _hasFrame = false;
+  MouseCursor _cursor = SystemMouseCursors.basic;
   Size? _logicalSize;
   double? _devicePixelRatio;
   int? _textureWidth;
@@ -235,6 +243,45 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
 
   void _handleControl(Map<String, dynamic> event) {
     switch (event['type']) {
+      case 'cursor':
+        final cursor = switch (event['cursor']) {
+          'None' => SystemMouseCursors.none,
+          'Pointer' => SystemMouseCursors.click,
+          'ContextMenu' => SystemMouseCursors.contextMenu,
+          'Help' => SystemMouseCursors.help,
+          'Progress' => SystemMouseCursors.progress,
+          'Wait' => SystemMouseCursors.wait,
+          'Cell' => SystemMouseCursors.cell,
+          'Crosshair' => SystemMouseCursors.precise,
+          'Text' => SystemMouseCursors.text,
+          'VerticalText' => SystemMouseCursors.verticalText,
+          'Alias' => SystemMouseCursors.alias,
+          'Copy' => SystemMouseCursors.copy,
+          'Move' => SystemMouseCursors.move,
+          'NoDrop' => SystemMouseCursors.noDrop,
+          'NotAllowed' => SystemMouseCursors.forbidden,
+          'Grab' => SystemMouseCursors.grab,
+          'Grabbing' => SystemMouseCursors.grabbing,
+          'EResize' => SystemMouseCursors.resizeRight,
+          'NResize' => SystemMouseCursors.resizeUp,
+          'NeResize' => SystemMouseCursors.resizeUpRight,
+          'NwResize' => SystemMouseCursors.resizeUpLeft,
+          'SResize' => SystemMouseCursors.resizeDown,
+          'SeResize' => SystemMouseCursors.resizeDownRight,
+          'SwResize' => SystemMouseCursors.resizeDownLeft,
+          'WResize' => SystemMouseCursors.resizeLeft,
+          'EwResize' => SystemMouseCursors.resizeLeftRight,
+          'NsResize' => SystemMouseCursors.resizeUpDown,
+          'NeswResize' => SystemMouseCursors.resizeUpRightDownLeft,
+          'NwseResize' => SystemMouseCursors.resizeUpLeftDownRight,
+          'ColResize' => SystemMouseCursors.resizeColumn,
+          'RowResize' => SystemMouseCursors.resizeRow,
+          'AllScroll' => SystemMouseCursors.allScroll,
+          'ZoomIn' => SystemMouseCursors.zoomIn,
+          'ZoomOut' => SystemMouseCursors.zoomOut,
+          _ => SystemMouseCursors.basic,
+        };
+        if (_cursor != cursor) setState(() => _cursor = cursor);
       case 'accessibilityTree':
         if (event['nodes'] case final List<Object?> nodes
             when SemanticsBinding.instance.semanticsEnabled) {
@@ -942,6 +989,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
             return KeyEventResult.handled;
           },
           child: MouseRegion(
+            cursor: _cursor,
             onHover: (event) => _queueMouseMove(event.localPosition),
             onExit: (_) => unawaited(_sendMouseLeave()),
             child: Listener(
@@ -973,6 +1021,16 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
               },
               onPointerSignal: (event) {
                 if (event is PointerScrollEvent) {
+                  final zoom = widget.onWheelZoom;
+                  if (zoom != null &&
+                      HardwareKeyboard.instance.isControlPressed &&
+                      event.scrollDelta.dy != 0) {
+                    GestureBinding.instance.pointerSignalResolver.register(
+                      event,
+                      (_) => zoom(event.scrollDelta.dy < 0 ? 1 : -1),
+                    );
+                    return;
+                  }
                   _queueMouseWheel(event.localPosition, event.scrollDelta);
                 }
               },

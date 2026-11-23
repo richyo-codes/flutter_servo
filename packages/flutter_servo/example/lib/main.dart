@@ -470,6 +470,9 @@ class _BrowserPageState extends State<BrowserPage> {
                       contentType: _contentType,
                       reloadRevision: _reloadRevision,
                       pageZoom: _zoomPercent / 100,
+                      onWheelZoom: _supportsZoom
+                          ? (steps) => _setZoom(_zoomPercent + 10 * steps)
+                          : null,
                       loadProgress: _loadProgress,
                       viewportMode: _viewportMode,
                       onLoadProgressChanged: _handleLoadProgress,
@@ -756,6 +759,7 @@ class _BrowserViewport extends StatelessWidget {
     required this.contentType,
     required this.reloadRevision,
     required this.pageZoom,
+    required this.onWheelZoom,
     required this.loadProgress,
     required this.viewportMode,
     required this.onLoadProgressChanged,
@@ -770,6 +774,7 @@ class _BrowserViewport extends StatelessWidget {
   final FlutterServoContentType contentType;
   final int reloadRevision;
   final double pageZoom;
+  final ValueChanged<int>? onWheelZoom;
   final FlutterServoLoadProgress loadProgress;
   final _ViewportMode viewportMode;
   final ValueChanged<FlutterServoLoadProgress> onLoadProgressChanged;
@@ -788,6 +793,7 @@ class _BrowserViewport extends StatelessWidget {
             fallback: fallback,
             reloadRevision: reloadRevision,
             pageZoom: pageZoom,
+            onWheelZoom: onWheelZoom,
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
             onError: onError,
@@ -798,6 +804,7 @@ class _BrowserViewport extends StatelessWidget {
             fallback: fallback,
             reloadRevision: reloadRevision,
             pageZoom: pageZoom,
+            onWheelZoom: onWheelZoom,
             onLoadProgressChanged: onLoadProgressChanged,
             onNavigationStateChanged: onNavigationStateChanged,
             onError: onError,

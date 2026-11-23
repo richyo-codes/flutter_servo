@@ -359,7 +359,7 @@ void main() {
   });
 
   testServoWidgets(
-    'converts both scroll axes to Servo physical motion deltas',
+    'applies page cursors and separates Ctrl+wheel from scrolling',
     (tester) async {
       final calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
@@ -373,17 +373,33 @@ void main() {
           });
       tester.view.devicePixelRatio = 2;
       addTearDown(tester.view.resetDevicePixelRatio);
+      final zoomSteps = <int>[];
       await tester.pumpWidget(
-        const MaterialApp(
+        MaterialApp(
           home: FlutterServoSurface.html(
             content: '<p>Scroll target</p>',
-            fallback: ColoredBox(color: Colors.white),
+            fallback: const ColoredBox(color: Colors.white),
+            onWheelZoom: zoomSteps.add,
           ),
         ),
       );
       await tester.pump();
       await tester.pump();
       final origin = tester.getTopLeft(find.byType(FlutterServoSurface));
+      for (final (name, cursor) in [
+        ('Pointer', SystemMouseCursors.click),
+        ('Text', SystemMouseCursors.text),
+        ('Default', SystemMouseCursors.basic),
+      ]) {
+        await sendControl({'type': 'cursor', 'cursor': name});
+        await tester.pump();
+        expect(
+          tester
+              .widgetList<MouseRegion>(find.byType(MouseRegion))
+              .map((region) => region.cursor),
+          contains(cursor),
+        );
+      }
       for (final delta in [const Offset(12, 30), const Offset(-12, -30)]) {
         await tester.sendEventToBinding(
           PointerScrollEvent(
@@ -393,6 +409,21 @@ void main() {
         );
         await tester.pump();
       }
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+      try {
+        for (final dy in [-30.0, 30.0]) {
+          await tester.sendEventToBinding(
+            PointerScrollEvent(
+              position: origin + const Offset(25, 30),
+              scrollDelta: Offset(0, dy),
+            ),
+          );
+        }
+      } finally {
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      }
+      await tester.pump();
+      expect(zoomSteps, [1, -1]);
       final wheels = calls.where((call) => call.method == 'notifyMouseWheel');
       expect(wheels.map((call) => call.arguments).toList(), [
         [50, 60, -24, -60],
