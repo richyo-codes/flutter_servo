@@ -4,6 +4,9 @@ A desktop-focused Flutter package for embedding Servo-backed web content.
 It provides an alternative to platform WebViews and Chromium-based embedding
 on Linux and Windows. Android and iOS use the system WebView.
 
+This is an independent, third-party community package. It is not affiliated
+with or endorsed by the Servo project.
+
 ## Embed a Page
 
 Initialize the package once before mounting a surface:
