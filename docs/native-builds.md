@@ -33,9 +33,8 @@ cargo build --release --manifest-path packages/flutter_servo/rust/Cargo.toml --f
 **Browser CI** uploads optimized Linux x64 and Windows x64 libraries and
 SHA-256 checksums, then reuses the archives for the browser builds. Look for
 the downloads in the run's **Artifacts** section. Run **Servo Native Assets**
-manually for a library-only build. A `native-vX.Y.Z` tag publishes both libraries under
-GitHub Releases once the package license and repository's `BROWSER_LICENSE`
-release setting are configured.
+manually for a library-only build. A `native-vX.Y.Z` tag publishes both libraries
+under GitHub Releases.
 
 Use an archive built from the same commit as your `flutter_servo` dependency.
 Check `BUILD_INFO.txt` after extraction and verify the archive against its

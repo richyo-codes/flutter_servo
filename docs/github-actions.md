@@ -64,12 +64,8 @@ builds that commit, and verifies that the tag still names that commit before
 publishing. Build provenance records the checked-out commit, including when a
 manual release targets a tag different from the workflow's branch.
 
-Public GitHub
-release publishing is enabled only when the repository variable
-`BROWSER_LICENSE` contains the chosen SPDX identifier and a real root `LICENSE`
-file exists. Until then, CI artifacts declare `LicenseRef-Unspecified`; this is
-metadata for development builds and does not grant a license. The placeholder
-package license must also be resolved before distributing the reusable package.
+The browser and embedding package use the checked-in MIT licenses. No
+repository license variable is needed to publish a release.
 
 Workflow files are in `.github/workflows/`; they run when this repository is
 hosted or mirrored on GitHub with Actions enabled. No remote workflow has been

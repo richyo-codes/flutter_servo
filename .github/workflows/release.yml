@@ -78,7 +78,6 @@ jobs:
 
   publish:
     needs: [validate, linux, windows]
-    if: vars.BROWSER_LICENSE != '' && vars.BROWSER_LICENSE != 'LicenseRef-Unspecified'
     runs-on: ubuntu-24.04
     permissions:
       contents: write

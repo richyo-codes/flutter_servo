@@ -7,7 +7,7 @@ variant=gtk4
 bundle_dir=""
 output_dir=""
 raw_version=""
-license_id="${BROWSER_LICENSE:-LicenseRef-Unspecified}"
+license_id="MIT"
 
 usage() {
   echo "Usage: $0 [--gtk gtk3|gtk4] [--bundle-dir PATH] [--out-dir PATH] [--version VERSION] [--license SPDX-ID]"
