@@ -107,6 +107,16 @@ is in debug mode. For Rust debugging only, the application's pubspec can overrid
 `hooks.user_defines.flutter_servo.rust_build_mode` to `debug`. Remove that override
 before measuring performance or packaging a release.
 
+For profiling an optimized Rust source build, enable line tables in the
+application's pubspec. This is off by default to reduce build disk usage.
+
+```yaml
+hooks:
+  user_defines:
+    flutter_servo:
+      rust_release_line_tables: true
+```
+
 Generate Rust bridge bindings from the repository root:
 
 ```bash

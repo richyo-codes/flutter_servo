@@ -45,6 +45,3 @@ surfman = { git = "https://github.com/richyo-codes/surfman", rev = "0e2cd47b6390
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(frb_expand)'] }
-
-[profile.release]
-debug = "line-tables-only"

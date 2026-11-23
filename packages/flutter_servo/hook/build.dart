@@ -11,6 +11,11 @@ void main(List<String> args) async {
         input.config.code.targetOS == OS.iOS) {
       return;
     }
+    final debugRust = input.userDefines['rust_build_mode'] == 'debug';
+    final lineTables = input.userDefines['rust_release_line_tables'];
+    if (lineTables != null && lineTables is! bool) {
+      throw ArgumentError('rust_release_line_tables must be a boolean.');
+    }
     final prebuiltDirectory = input.userDefines['prebuilt_native_directory'];
     if (prebuiltDirectory != null) {
       if (prebuiltDirectory is! String || prebuiltDirectory.trim().isEmpty) {
@@ -18,8 +23,13 @@ void main(List<String> args) async {
           'prebuilt_native_directory must be a directory path.',
         );
       }
-      if (input.userDefines['rust_build_mode'] == 'debug') {
+      if (debugRust) {
         throw ArgumentError('Prebuilt native libraries are release builds.');
+      }
+      if (lineTables == true) {
+        throw ArgumentError(
+          'rust_release_line_tables requires a source build.',
+        );
       }
       final directory = Directory(prebuiltDirectory);
       if (!directory.isAbsolute) {
@@ -38,7 +48,10 @@ void main(List<String> args) async {
     ]);
     await FlutterRustBridgeNativeAssetsBuilder(
       cratePath: 'rust',
-      buildMode: input.userDefines['rust_build_mode'] == 'debug'
+      extraCargoBuildArgs: !debugRust && lineTables == true
+          ? const ['--config', 'profile.release.debug="line-tables-only"']
+          : const [],
+      buildMode: debugRust
           ? FlutterRustBridgeBuildMode.debug
           : FlutterRustBridgeBuildMode.release,
       features:
