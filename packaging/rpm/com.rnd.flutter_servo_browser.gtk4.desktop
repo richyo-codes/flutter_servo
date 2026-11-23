@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Flutter Servo Browser (GTK4)
-Comment=Browse the web with Servo
-Exec=flutter-servo-browser-gtk4
-Categories=Network;WebBrowser;
-StartupNotify=true
-StartupWMClass=com.rnd.flutter_servo_browser

@@ -5,14 +5,15 @@ Servo native libraries once for Linux x64 and Windows x64. The widget tests
 use the Linux library, and each browser bundle uses the library for its
 platform. Each consumer checks the archive checksum and source commit before
 bundling it. After the shared checks pass, CI builds the example browser.
-Both bundles contain the login, licenses, documentation, and video demos. Linux
-uploads a GTK4 tarball and RPM. Windows uploads a ZIP. Downloads appear under
+All bundles contain the login, licenses, documentation, and video demos. Linux
+uploads a tarball, RPM, and DEB for each GTK variant. Windows uploads a ZIP. Downloads appear under
 the run's **Artifacts** section and are retained for 14 days.
 
 The native archives are also available to embedders in the **Browser CI** run.
 Use **Servo Native Assets** for a standalone manual build or a `native-v*` tag.
 
-The build uses the public Flutter GTK4 fork and precompiled engine artifacts:
+The GTK3 build uses standard Flutter stable on `ubuntu-latest`. The GTK4 build
+uses the public Flutter GTK4 fork and precompiled engine artifacts:
 
 - Flutter fork revision: `de20cd2c06847dbc887df574c585484c447a257c`
 - Prebuilt engine: `f2b4375245d63bdb7007d42b4032e0e8d079780c`
@@ -30,35 +31,34 @@ release mode. Common Flutter assets use Flutter's usual storage; the custom
 storage URL is scoped to the engine setup.
 
 The engine installer verifies debug/profile/release archive contents and GTK
-linkage. The bundle check requires AOT assets, GTK4, the native Servo entry
+linkage. The bundle check requires AOT assets, the selected GTK version, the native Servo entry
 point, and resolved ELF dependencies. A native probe exercises local HTML,
 Unicode composition, context menus, and stale-response rejection under Xvfb
 without screenshots.
 
-The RPM installs the complete relocatable bundle under
-`/usr/lib64/flutter-servo-browser-gtk4/` and provides the command
-`flutter-servo-browser-gtk4` and a desktop entry. Packaging rewrites build-tree
-RUNPATHs in a temporary copy. Automatic RPM requirements retain actual glibc,
-libstdc++, GTK, graphics, and other system ABI requirements, so this is intended
-for sufficiently recent RPM distributions, not arbitrary older Fedora/RHEL
-versions. The requirements are uploaded alongside the RPM. GPU sharing remains
-opt-in through `FLUTTER_SERVO_GPU_TEXTURES=1`.
+GTK3 and GTK4 packages install side by side as `flutter-servo-browser-gtk3`
+and `flutter-servo-browser-gtk4`, each with a command and desktop entry. RPMs
+store their private bundles under `/usr/lib64` and DEBs under `/usr/lib`.
+Packaging rewrites build-tree RUNPATHs in a temporary copy and derives system
+dependencies from the binaries. The packages require distributions with system
+libraries compatible with their build runner. GPU sharing remains opt-in through
+`FLUTTER_SERVO_GPU_TEXTURES=1`.
 
-Build an RPM locally from an existing release bundle:
+Build packages locally from existing release bundles:
 
 ```bash
-bash tools/build_browser_rpm.sh --version 0.1.0
-sudo dnf install ./build/packages/rpm/gtk4/*.rpm
-flutter-servo-browser-gtk4
+bash tools/build_browser_rpm.sh --gtk gtk3 --version 0.1.0
+bash tools/build_browser_deb.sh --gtk gtk4 --version 0.1.0
 ```
 
-Requires an x86_64 Linux host with `rpm`, `rpmbuild`, `patchelf`, `binutils`,
-and the bundle's system libraries. Use `--bundle-dir` and `--out-dir` to select
-other paths. The original bundle is left untouched.
+RPM packaging requires an x86_64 Linux host with `rpm` and `rpmbuild`. DEB
+packaging requires Debian or Ubuntu x86_64 with `dpkg-dev` and the system
+libraries used by the bundle. Both require `patchelf` and `binutils`. Use
+`--bundle-dir` and `--out-dir` to select other paths.
 
 `v*` tags trigger **Browser Release**, which runs the same Flutter, Rust, and
-packaging checks as CI before building the Linux and Windows bundles and GTK4
-RPM. The release workflow can also
+packaging checks as CI before building the Linux and Windows bundles and both
+GTK variants' RPMs and DEBs. The release workflow can also
 be run manually with an existing tag. It resolves the tag once, tests and
 builds that commit, and verifies that the tag still names that commit before
 publishing. Build provenance records the checked-out commit, including when a

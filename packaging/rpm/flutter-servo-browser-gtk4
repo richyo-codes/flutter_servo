@@ -1,2 +1,0 @@
-#!/usr/bin/env sh
-exec /usr/lib64/flutter-servo-browser-gtk4/flutter_servo_example "$@"

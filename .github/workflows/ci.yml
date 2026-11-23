@@ -28,9 +28,9 @@ jobs:
     needs: native-linux
     uses: ./.github/workflows/checks.yml
 
-  gtk4-rpm:
+  linux:
     needs: tests
-    uses: ./.github/workflows/build-gtk4-rpm.yml
+    uses: ./.github/workflows/build-linux-browser.yml
 
   windows:
     needs: [tests, native-windows]

@@ -1,0 +1,38 @@
+%global debug_package %{nil}
+%global __brp_strip /bin/true
+%global __brp_strip_comment_note /bin/true
+%global __brp_strip_static_archive /bin/true
+# Private Flutter/Servo libraries must not satisfy unrelated system packages.
+%global __provides_exclude_from ^/usr/lib64/flutter-servo-browser-@GTK@/.*\.so.*$
+%global __requires_exclude ^(libapp|libflutter_linux_gtk4?|libflutter_servo_plugin|librust_lib_flutter_servo)\.so.*$
+
+Name: flutter-servo-browser-@GTK@
+Version: @VERSION@
+Release: @RELEASE@
+Summary: Flutter browser powered by Servo using @GTK@
+License: @LICENSE@
+URL: https://github.com/richyo-codes/flutter_servo
+Source0: %{name}.tar.gz
+BuildArch: x86_64
+Requires: @GTK@
+Requires: libEGL.so.1()(64bit)
+
+%description
+An experimental desktop browser embedding Servo in Flutter with the @GTK@
+Linux engine. Includes the browser bundle and its private native libraries.
+
+%prep
+%setup -q -n %{name}
+
+%build
+
+%install
+mkdir -p %{buildroot}/usr/lib64/%{name}
+cp -a bundle/. %{buildroot}/usr/lib64/%{name}/
+install -Dm755 launcher %{buildroot}/usr/bin/%{name}
+install -Dm644 browser.desktop %{buildroot}/usr/share/applications/com.rnd.flutter_servo_browser.@GTK@.desktop
+
+%files
+/usr/lib64/%{name}
+/usr/bin/%{name}
+/usr/share/applications/com.rnd.flutter_servo_browser.@GTK@.desktop

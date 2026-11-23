@@ -1,4 +1,4 @@
-name: Build GTK4 Browser RPM
+name: Build Linux Browser Packages
 
 on:
   workflow_call:
@@ -16,15 +16,20 @@ permissions:
   contents: read
 
 jobs:
-  gtk4-rpm:
-    runs-on: ubuntu-26.04
+  linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        gtk: [gtk3, gtk4]
+    runs-on: ${{ matrix.gtk == 'gtk4' && 'ubuntu-26.04' || 'ubuntu-latest' }}
     timeout-minutes: 180
     env:
       FLUTTER_GTK4_REPOSITORY: https://github.com/richyo-codes/flutter.git
       FLUTTER_GTK4_SHA: de20cd2c06847dbc887df574c585484c447a257c
       FLUTTER_PREBUILT_ENGINE_VERSION: f2b4375245d63bdb7007d42b4032e0e8d079780c
       FLUTTER_STORAGE_BASE_URL: https://pub-79a02b1963fb4da6b5e4e4816e8b7146.r2.dev
-      FLUTTER_LINUX_GTK: gtk4
+      GTK_VARIANT: ${{ matrix.gtk }}
+      BUNDLE_DIR: packages/flutter_servo/example/build/${{ matrix.gtk == 'gtk4' && 'linux-gtk4' || 'linux' }}/x64/release/bundle
       BROWSER_LICENSE: ${{ vars.BROWSER_LICENSE || 'LicenseRef-Unspecified' }}
     steps:
       - uses: actions/checkout@v4
@@ -43,25 +48,34 @@ jobs:
           fi
           echo "ARTIFACT_VERSION=${version#v}" >> "$GITHUB_ENV"
 
-      - name: Install GTK4 bundle and RPM build dependencies
+      - name: Install Linux bundle and packaging dependencies
         shell: bash
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential clang cmake ninja-build \
-            pkg-config libgtk-3-dev libgtk-4-dev libepoxy-dev libgbm-dev \
+            pkg-config libgtk-3-dev "libgtk-${GTK_VARIANT#gtk}-dev" libepoxy-dev libgbm-dev \
             libegl1-mesa-dev libgles2-mesa-dev libgl1-mesa-dri \
-            libfontconfig1 libfreetype6 curl git unzip xz-utils zip rpm patchelf xvfb
+            libfontconfig1 libfreetype6 curl git unzip xz-utils zip rpm dpkg-dev patchelf xvfb
+
+      - uses: subosito/flutter-action@v2
+        if: matrix.gtk == 'gtk3'
+        with:
+          channel: stable
+          cache: true
 
       - uses: actions/cache@v4
+        if: matrix.gtk == 'gtk4'
         with:
           path: ~/.pub-cache
           key: gtk4-rpm-${{ runner.os }}-${{ env.FLUTTER_GTK4_SHA }}-${{ hashFiles('packages/flutter_servo/example/pubspec.lock') }}
 
       - uses: dart-lang/setup-dart@v1
+        if: matrix.gtk == 'gtk4'
         with:
           sdk: stable
       - name: Install pinned FVM and Flutter SDK
+        if: matrix.gtk == 'gtk4'
         shell: bash
         run: |
           dart pub global activate fvm 4.2.0
@@ -74,6 +88,7 @@ jobs:
           test "$(cat .fvm/flutter_sdk/bin/cache/engine.stamp)" = "$FLUTTER_PREBUILT_ENGINE_VERSION"
 
       - name: Install and validate prebuilt GTK4 engines
+        if: matrix.gtk == 'gtk4'
         shell: bash
         run: |
           bash tools/install_gtk4_prebuilt_engine.sh .fvm/flutter_sdk
@@ -89,55 +104,73 @@ jobs:
       - name: Build the release browser
         shell: bash
         run: |
-          sdk="$GITHUB_WORKSPACE/.fvm/flutter_sdk/bin/flutter"
           cd packages/flutter_servo/example
-          "$sdk" pub get
-          "$sdk" build linux --release --linux-gtk=gtk4
+          if [[ "$GTK_VARIANT" == gtk4 ]]; then
+            sdk="$GITHUB_WORKSPACE/.fvm/flutter_sdk/bin/flutter"
+            FLUTTER_LINUX_GTK=gtk4 "$sdk" build linux --release --linux-gtk=gtk4
+          else
+            flutter build linux --release
+          fi
 
-      - name: Verify the native renderer and GTK4 linkage
+      - name: Verify the native renderer and GTK linkage
         shell: bash
         run: |
-          bundle=packages/flutter_servo/example/build/linux-gtk4/x64/release/bundle
-          bash tools/verify_gtk4_bundle.sh "$bundle"
+          bundle="$BUNDLE_DIR"
+          bash tools/verify_linux_bundle.sh "$bundle" "$GTK_VARIANT"
           for demo in login licenses documentation video; do
             test -s "$bundle/data/flutter_assets/assets/demos/$demo.html"
           done
           xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 \
             bash tools/run_native_session_probe.sh \
             "$GITHUB_WORKSPACE/$bundle/lib/librust_lib_flutter_servo.so" --input-controls
-          cp .fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64-release/LICENSE.flutter_gtk.md "$bundle/"
+          if [[ "$GTK_VARIANT" == gtk4 ]]; then
+            cp .fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64-release/LICENSE.flutter_gtk.md "$bundle/"
+            flutter_provenance="$FLUTTER_GTK4_SHA / $FLUTTER_PREBUILT_ENGINE_VERSION"
+          else
+            flutter_provenance="$(flutter --version --machine | jq -r '.frameworkRevision + " / " + .engineRevision')"
+          fi
           if [[ "$BROWSER_LICENSE" != LicenseRef-Unspecified ]]; then
             test -f LICENSE
             if grep -q TODO LICENSE; then exit 1; fi
             cp LICENSE "$bundle/"
           fi
-          printf 'Version: %s\nApp commit: %s\nFlutter commit: %s\nEngine: %s\nRust mode: release\nGTK: 4\nLicense: %s\n' \
-            "$ARTIFACT_VERSION" "$(git rev-parse HEAD)" "$FLUTTER_GTK4_SHA" \
-            "$FLUTTER_PREBUILT_ENGINE_VERSION" "$BROWSER_LICENSE" > "$bundle/BUILD_INFO.txt"
+          printf 'Version: %s\nApp commit: %s\nFlutter / engine: %s\nRust mode: release\nGTK: %s\nLicense: %s\n' \
+            "$ARTIFACT_VERSION" "$(git rev-parse HEAD)" "$flutter_provenance" \
+            "$GTK_VARIANT" "$BROWSER_LICENSE" > "$bundle/BUILD_INFO.txt"
 
-      - name: Build RPM and checksums
+      - name: Build RPM and DEB packages
         shell: bash
-        run: bash tools/build_browser_rpm.sh --version "$ARTIFACT_VERSION" --out-dir build/packages/rpm/gtk4
+        run: |
+          bash tools/build_browser_rpm.sh --gtk "$GTK_VARIANT" --bundle-dir "$BUNDLE_DIR" --version "$ARTIFACT_VERSION"
+          bash tools/build_browser_deb.sh --gtk "$GTK_VARIANT" --bundle-dir "$BUNDLE_DIR" --version "$ARTIFACT_VERSION"
 
       - name: Archive the release bundle with executable permissions
         shell: bash
         run: |
           mkdir -p build/packages/bundle
-          tar -C packages/flutter_servo/example/build/linux-gtk4/x64/release/bundle \
-            -czf "build/packages/bundle/flutter-servo-browser-linux-x86_64-gtk4-$ARTIFACT_VERSION.tar.gz" .
+          tar -C "$BUNDLE_DIR" \
+            -czf "build/packages/bundle/flutter-servo-browser-linux-x86_64-$GTK_VARIANT-$ARTIFACT_VERSION.tar.gz" .
 
-      - name: Upload GTK4 RPM
+      - name: Upload RPM package
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-servo-browser-linux-x86_64-gtk4-rpm-${{ env.ARTIFACT_VERSION }}
-          path: build/packages/rpm/gtk4/
+          name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-rpm-${{ env.ARTIFACT_VERSION }}
+          path: build/packages/rpm/${{ matrix.gtk }}/
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload GTK4 release bundle
+      - name: Upload DEB package
         uses: actions/upload-artifact@v4
         with:
-          name: flutter-servo-browser-linux-x86_64-gtk4-bundle-${{ env.ARTIFACT_VERSION }}
+          name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-deb-${{ env.ARTIFACT_VERSION }}
+          path: build/packages/deb/${{ matrix.gtk }}/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload Linux release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-bundle-${{ env.ARTIFACT_VERSION }}
           path: build/packages/bundle/*.tar.gz
           if-no-files-found: error
           retention-days: 14

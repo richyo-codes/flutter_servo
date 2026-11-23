@@ -63,7 +63,7 @@ jobs:
 
   linux:
     needs: [validate, tests]
-    uses: ./.github/workflows/build-gtk4-rpm.yml
+    uses: ./.github/workflows/build-linux-browser.yml
     with:
       checkout_ref: ${{ needs.validate.outputs.commit }}
       artifact_version: ${{ needs.validate.outputs.tag }}
@@ -98,14 +98,23 @@ jobs:
         run: |
           test "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" = "$RELEASE_COMMIT"
           shopt -s nullglob
-          rpm=(release-assets/*.rpm)
-          linux=(release-assets/flutter-servo-browser-linux-x86_64-gtk4-*.tar.gz)
+          assets=()
+          for gtk in gtk3 gtk4; do
+            for extension in rpm deb tar.gz; do
+              files=(release-assets/flutter-servo-browser-linux-x86_64-"$gtk"-*."$extension")
+              if (( ${#files[@]} != 1 )); then
+                echo "Expected one $gtk $extension artifact" >&2
+                exit 1
+              fi
+              assets+=("${files[0]}")
+            done
+          done
           windows=(release-assets/flutter-servo-browser-*-windows-x64-release.zip)
-          if (( ${#rpm[@]} == 0 || ${#linux[@]} != 1 || ${#windows[@]} != 1 )); then
-            echo "Expected the Linux RPM, Linux bundle, and Windows bundle" >&2
+          if (( ${#windows[@]} != 1 )); then
+            echo "Expected one Windows bundle" >&2
             exit 1
           fi
-          assets=("${rpm[@]}" "${linux[@]}" "${windows[@]}" release-assets/*.sha256 release-assets/*.requires.txt)
+          assets+=("${windows[@]}" release-assets/*.sha256 release-assets/*.requires.txt)
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             gh release upload "$RELEASE_TAG" --clobber "${assets[@]}"
           else

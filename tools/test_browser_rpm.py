@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Test RPM creation and rejection paths with a small synthetic GTK4 bundle."""
+"""Test Linux packaging with small synthetic GTK3 and GTK4 bundles."""
 
 import hashlib
 from pathlib import Path
@@ -12,6 +12,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "tools/build_browser_rpm.sh"
+BUILD_DEB = ROOT / "tools/build_browser_deb.sh"
 VERIFY = ROOT / "tools/verify_gtk4_bundle.sh"
 
 
@@ -27,20 +28,27 @@ class BrowserRpmTest(unittest.TestCase):
                 raise RuntimeError(f"Missing test dependency: {command}")
         cls.temp = tempfile.TemporaryDirectory(prefix="servo-rpm-test-")
         cls.root = Path(cls.temp.name)
-        cls.bundle = cls.root / "release bundle"
-        (cls.bundle / "lib").mkdir(parents=True)
-        (cls.bundle / "data/flutter_assets").mkdir(parents=True)
-        (cls.bundle / "data/icudtl.dat").touch()
+        cls.bundle = cls.make_bundle(4)
+        cls.gtk3_bundle = cls.make_bundle(3)
+
+    @classmethod
+    def make_bundle(cls, gtk):
+        bundle = cls.root / f"GTK{gtk} release bundle"
+        (bundle / "lib").mkdir(parents=True)
+        (bundle / "data/flutter_assets").mkdir(parents=True)
+        (bundle / "data/icudtl.dat").touch()
         flags = shlex.split(subprocess.check_output(
-            ["pkg-config", "--cflags", "--libs", "gtk4"], text=True
+            ["pkg-config", "--cflags", "--libs", "gtk4" if gtk == 4 else "gtk+-3.0"],
+            text=True,
         ))
-        source = '#include <gtk/gtk.h>\nint main(void) { return gtk_get_major_version() != 4; }\n'
+        source = f'#include <gtk/gtk.h>\nint main(void) {{ return gtk_get_major_version() != {gtk}; }}\n'
         subprocess.run(
             ["gcc", "-x", "c", "-", "-Wl,-rpath,/temporary/build/tree",
-             "-o", str(cls.bundle / "flutter_servo_example"), *flags],
+             "-o", str(bundle / "flutter_servo_example"), *flags],
             input=source, text=True, check=True,
         )
-        for name in ("libapp", "libflutter_linux_gtk4", "libflutter_servo_plugin",
+        engine = "libflutter_linux_gtk4" if gtk == 4 else "libflutter_linux_gtk"
+        for name in ("libapp", engine, "libflutter_servo_plugin",
                      "librust_lib_flutter_servo"):
             source = "void fixture(void) {}\n"
             if name == "librust_lib_flutter_servo":
@@ -48,9 +56,47 @@ class BrowserRpmTest(unittest.TestCase):
             subprocess.run(
                 ["gcc", "-shared", "-fPIC", "-x", "c", "-",
                  f"-Wl,-soname,{name}.so", "-Wl,-rpath,/temporary/build/tree",
-                 "-o", str(cls.bundle / f"lib/{name}.so")],
+                 "-o", str(bundle / f"lib/{name}.so")],
                 input=source, text=True, check=True,
             )
+        return bundle
+
+    def test_gtk3_rpm(self):
+        output = self.root / "gtk3 rpm"
+        result = run("bash", str(BUILD), "--gtk", "gtk3", "--bundle-dir",
+                     str(self.gtk3_bundle), "--out-dir", str(output), "--version", "v0.1.0")
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        rpm = next(output.glob("*.rpm"))
+        self.assertIn("flutter-servo-browser-gtk3", run("rpm", "-qp", str(rpm)).stdout)
+        requires = run("rpm", "-qp", "--requires", str(rpm)).stdout
+        self.assertIn("libgtk-3.so.0", requires)
+        self.assertNotIn("libgtk-4.so.1", requires)
+
+    def test_debs(self):
+        if not shutil.which("dpkg-query") or run("dpkg-query", "-W", "libgtk-4-1").returncode:
+            self.skipTest("DEB dependency resolution requires Debian or Ubuntu GTK packages")
+        for variant, bundle, gtk_dependency in (
+            ("gtk3", self.gtk3_bundle, "libgtk-3-0"),
+            ("gtk4", self.bundle, "libgtk-4-1"),
+        ):
+            with self.subTest(variant=variant):
+                output = self.root / f"{variant} deb"
+                result = run("bash", str(BUILD_DEB), "--gtk", variant, "--bundle-dir",
+                             str(bundle), "--out-dir", str(output), "--version", "v0.1.0-3-gabc123")
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                deb = next(output.glob("*.deb"))
+                self.assertEqual(run("dpkg-deb", "-f", str(deb), "Package").stdout.strip(),
+                                 f"flutter-servo-browser-{variant}")
+                self.assertEqual(run("dpkg-deb", "-f", str(deb), "Version").stdout.strip(),
+                                 "0.1.0+git.3-gabc123")
+                depends = run("dpkg-deb", "-f", str(deb), "Depends").stdout
+                self.assertIn(gtk_dependency, depends)
+                self.assertIn("libc6", depends)
+                self.assertNotIn("librust_lib_flutter_servo", depends)
+                extracted = self.root / f"extracted-{variant}"
+                subprocess.run(["dpkg-deb", "-x", str(deb), str(extracted)], check=True)
+                binary = extracted / f"usr/lib/flutter-servo-browser-{variant}/flutter_servo_example"
+                self.assertEqual(run(str(binary)).returncode, 0)
 
     @classmethod
     def tearDownClass(cls):
