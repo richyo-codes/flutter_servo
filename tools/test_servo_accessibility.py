@@ -151,6 +151,26 @@ def main(library_path):
 
             wait_for(popup_result, "blocked popup notification and null window handle", None)
             print("Servo popup denied in the page and reported to the host")
+        if "--script-dialogs" in sys.argv[2:]:
+            for kind, code, accept, expected in [
+                ("alert", "alert('Message');'acknowledged'", True, '"acknowledged"'),
+                ("confirm", "confirm('Message')", False, "false"),
+                ("prompt", "prompt('Message', 'Default')", True, '"Typed"'),
+            ]:
+                assert load(session, f"""
+                  <script>
+                    setTimeout(() => {{ document.title = JSON.stringify(eval({json.dumps(code)})); }}, 0);
+                  </script>
+                """.encode())
+                event = wait_for(lambda e: e, kind, "scriptDialog")
+                assert event["kind"] == kind and event["message"] == "Message"
+                if kind == "prompt":
+                    assert event["default"] == "Default"
+                assert not send(type="scriptDialog", id=event["id"] + 1, accept=True)
+                assert send(type="scriptDialog", id=event["id"], accept=accept, value="Typed")
+                assert not send(type="scriptDialog", id=event["id"], accept=True)
+                wait_for(lambda e: True if e["title"] == expected else None, kind, "title")
+            print("Servo JavaScript alert, confirm, and prompt replies passed")
         if "--file-picker" not in sys.argv[2:]:
             return
         assert send(type="accessibilityEnabled", enabled=True)
