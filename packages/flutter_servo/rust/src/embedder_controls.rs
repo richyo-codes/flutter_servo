@@ -11,6 +11,7 @@ pub(crate) struct Controls {
     events: VecDeque<Value>,
     menu: Option<(u64, ContextMenu)>,
     picker: Option<(u64, servo::FilePicker)>,
+    dialog: Option<(u64, EmbedderControlId, servo::SimpleDialog)>,
     ime: Option<(EmbedderControlId, u64)>,
 }
 
@@ -107,7 +108,26 @@ impl Controls {
     }
 
     pub fn show(&mut self, control: EmbedderControl) {
+        let control_id = control.id();
         match control {
+            EmbedderControl::SimpleDialog(dialog) => {
+                if self.dialog.is_some() {
+                    dialog.dismiss();
+                    return;
+                }
+                let (kind, default) = match &dialog {
+                    servo::SimpleDialog::Alert(_) => ("alert", ""),
+                    servo::SimpleDialog::Confirm(_) => ("confirm", ""),
+                    servo::SimpleDialog::Prompt(prompt) => ("prompt", prompt.current_value()),
+                };
+                let id = NEXT_CONTROL_ID.fetch_add(1, Ordering::Relaxed);
+                self.events.push_back(json!({
+                    "type": "scriptDialog", "id": id, "kind": kind,
+                    "message": dialog.message().chars().take(4096).collect::<String>(),
+                    "default": default.chars().take(4096).collect::<String>(),
+                }));
+                self.dialog = Some((id, control_id, dialog));
+            }
             EmbedderControl::FilePicker(picker) => {
                 if self.picker.is_some() {
                     picker.dismiss();
@@ -170,6 +190,13 @@ impl Controls {
     }
 
     pub fn hide(&mut self, id: EmbedderControlId) {
+        if self
+            .dialog
+            .as_ref()
+            .is_some_and(|(_, current, _)| *current == id)
+        {
+            self.cancel_dialog();
+        }
         if self.picker.as_ref().is_some_and(|(_, p)| p.id() == id) {
             self.picker.take();
             self.events.retain(|e| e["type"] != "filePicker");
@@ -187,6 +214,7 @@ impl Controls {
         self.navigation.take();
         self.picker.take();
         self.events.clear();
+        self.cancel_dialog();
         self.dismiss_menu();
         if self.ime.take().is_some() {
             self.events.push_back(json!({"type": "hideIme"}));
@@ -196,6 +224,40 @@ impl Controls {
     pub fn cancel_picker(&mut self) {
         self.picker.take();
         self.events.retain(|event| event["type"] != "filePicker");
+    }
+
+    pub fn cancel_dialog(&mut self) {
+        if let Some((id, _, dialog)) = self.dialog.take() {
+            dialog.dismiss();
+            self.events.retain(|event| event["type"] != "scriptDialog");
+            self.events
+                .push_back(json!({"type":"hideScriptDialog","id":id}));
+        }
+    }
+
+    pub fn respond_dialog(&mut self, id: u64, accept: bool, value: &Value) -> bool {
+        if !self
+            .dialog
+            .as_ref()
+            .is_some_and(|(current, _, _)| *current == id)
+        {
+            return false;
+        }
+        let (_, _, mut dialog) = self.dialog.take().unwrap();
+        if !accept {
+            dialog.dismiss();
+        } else if let servo::SimpleDialog::Prompt(prompt) = &mut dialog {
+            if let Some(value) = value.as_str().filter(|s| s.len() <= 16384) {
+                prompt.set_current_value(value);
+                dialog.confirm();
+            } else {
+                dialog.dismiss();
+                return false;
+            }
+        } else {
+            dialog.confirm();
+        }
+        true
     }
 
     fn dismiss_menu(&mut self) {

@@ -84,6 +84,7 @@ class FlutterServoSurface extends StatefulWidget {
        fallback = config.fallback,
        enableInputPlumbing = config.enableInputPlumbing,
        enableContextMenu = config.enableContextMenu,
+       enableJavaScriptDialogs = config.enableJavaScriptDialogs,
        onLoadStateChanged = config.onLoadStateChanged,
        onLoadProgressChanged = config.onLoadProgressChanged,
        onLoadPercentChanged = config.onLoadPercentChanged,
@@ -109,6 +110,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.enableContextMenu = false,
+    this.enableJavaScriptDialogs = false,
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onLoadPercentChanged,
@@ -136,6 +138,7 @@ class FlutterServoSurface extends StatefulWidget {
     required this.fallback,
     this.enableInputPlumbing = true,
     this.enableContextMenu = false,
+    this.enableJavaScriptDialogs = false,
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
     this.onLoadPercentChanged,
@@ -158,12 +161,17 @@ class FlutterServoSurface extends StatefulWidget {
        contentType = FlutterServoContentType.html;
 
   final FlutterServoContentType contentType;
+
   final String content;
   final Widget fallback;
   final bool enableInputPlumbing;
 
   /// Shows Servo's page-specific context menu; requires a Material host.
   final bool enableContextMenu;
+
+  /// Allow desktop Servo pages to request alert, confirm, and prompt modals.
+  /// Enable only for trusted content. Does not enable popup windows.
+  final bool enableJavaScriptDialogs;
   final ValueChanged<bool>? onLoadStateChanged;
   final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
 
@@ -630,6 +638,10 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         );
       case 'filePicker':
         unawaited(_pickUploadFiles(event));
+      case 'scriptDialog':
+        unawaited(_showScriptDialog(event));
+      case 'hideScriptDialog':
+        if (_scriptDialogId == event['id']) _dismissScriptDialog();
       case 'hideContextMenu':
         if (_menuId == event['id']) _hideMenu();
       case 'hideIme':
@@ -656,6 +668,85 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           size: box.size,
           transform: box.getTransformTo(null),
         );
+    }
+  }
+
+  int? _scriptDialogId;
+  DialogRoute<bool>? _scriptDialogRoute;
+
+  void _dismissScriptDialog() {
+    final route = _scriptDialogRoute;
+    _scriptDialogRoute = null;
+    if (route != null && route.isActive) route.navigator?.removeRoute(route);
+  }
+
+  Future<void> _showScriptDialog(Map<String, dynamic> event) async {
+    final id = event['id'] as int;
+    final kind = event['kind'] as String;
+    var value = event['default'] as String;
+    var accept = false;
+    if (mounted && widget.enableJavaScriptDialogs && _scriptDialogId == null) {
+      final navigator = Navigator.maybeOf(context);
+      if (navigator != null) {
+        _scriptDialogId = id;
+        final route = DialogRoute<bool>(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text('Web page ${kind == 'prompt' ? 'prompt' : 'message'}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(event['message'] as String),
+                if (kind == 'prompt')
+                  TextFormField(
+                    initialValue: value,
+                    maxLength: 4096,
+                    onChanged: (text) => value = text,
+                    autofocus: true,
+                  ),
+              ],
+            ),
+            scrollable: true,
+            actions: [
+              if (kind != 'alert')
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
+        );
+        _scriptDialogRoute = route;
+        final timeout = Timer(
+          const Duration(seconds: 30),
+          _dismissScriptDialog,
+        );
+        try {
+          accept = await navigator.push(route) ?? false;
+        } finally {
+          timeout.cancel();
+        }
+        _scriptDialogId = null;
+        _scriptDialogRoute = null;
+      }
+    }
+    if (!mounted) return;
+    try {
+      await _respondToControl({
+        'type': 'scriptDialog',
+        'id': id,
+        'accept': accept,
+        'value': value,
+      });
+    } on PlatformException {
+      // Navigation or teardown may already have canceled the native request.
+    } on MissingPluginException {
+      // Native engine is unavailable.
     }
   }
 
@@ -795,6 +886,7 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     _hideMenu();
     _textInput.close();
     _loadTimeoutTimer?.cancel();
+    scheduleMicrotask(_dismissScriptDialog);
     _deferredRefreshTimer?.cancel();
     _resizeSyncTimer?.cancel();
     _pendingMousePosition = null;

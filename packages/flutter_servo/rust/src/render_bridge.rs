@@ -214,6 +214,7 @@ impl WebViewDelegate for SessionDelegate {
         render_log!("flutter_servo: rust delegate load status {status:?}");
         if matches!(status, LoadStatus::Started) {
             self.controls.borrow_mut().cancel_picker();
+            self.controls.borrow_mut().cancel_dialog();
         }
         if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete) {
             self.document_ready.set(true);

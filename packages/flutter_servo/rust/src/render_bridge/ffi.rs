@@ -420,6 +420,13 @@ unsafe fn control_response(session: *mut c_void, response: *const c_char) -> boo
                 .borrow_mut()
                 .respond_picker(id, &value["paths"])
         }),
+        Some("scriptDialog") => value["id"].as_u64().is_some_and(|id| {
+            session.delegate.controls.borrow_mut().respond_dialog(
+                id,
+                value["accept"].as_bool() == Some(true),
+                &value["value"],
+            )
+        }),
         Some("clearCookiesConfirmed") => {
             let (Some(servo), Some(id)) = (session.servo.as_ref(), value["id"].as_u64()) else {
                 return false;

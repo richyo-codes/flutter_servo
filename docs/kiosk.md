@@ -227,3 +227,11 @@ Per-navigation host decisions, popup and external-launch policy, ephemeral
 sessions, permission prompts, file pickers, and downloads are not yet exposed
 as a complete host-controlled API. Do not assume that a missing callback is a
 security boundary.
+## JavaScript dialogs
+
+Desktop Servo surfaces suppress page dialogs by default. For trusted pages,
+set `enableJavaScriptDialogs: true` to show `alert()`, `confirm()`, and
+`prompt()` as Flutter modals in the existing window. Outstanding dialogs
+are canceled on navigation or teardown; unanswered modals time out.
+`window.open()` remains blocked. Flutter's preview multi-window API is a
+future option for surfacing auxiliary Servo WebViews, not a dependency here.
