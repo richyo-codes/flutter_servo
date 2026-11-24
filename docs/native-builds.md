@@ -52,14 +52,14 @@ hooks:
       prebuilt_native_tag: native-v0.1.2
 ```
 
-The hook selects
-the archive for the target OS and architecture and checks its SHA-256
+The hook selects the archive for the target OS and architecture and checks its SHA-256
 sidecar before extracting it into Dart's shared hook cache. A requested
 download that fails does not silently fall back to a Rust build.
 
-While the first pub.dev publication is pending, use a pinned Git dependency.
-This revision has the corrected pub.dev hook layout and uses the same native
-code as the `native-v0.1.2` release:
+Install the stable package from [pub.dev](https://pub.dev/packages/flutter_servo).
+To test an unreleased Git revision, pin its commit and use a compatible native
+archive, or leave the tag unset to build from source. For example, this
+revision uses the same native code as `native-v0.1.2`:
 
 ```yaml
 dependencies:

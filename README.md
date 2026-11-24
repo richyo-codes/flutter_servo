@@ -22,9 +22,14 @@ offer the same web compatibility as Chromium. Test the pages your app needs.
 
 ## Embed a Page
 
-Add `packages/flutter_servo` from this repository as a dependency in your
-Flutter app. Initialize Servo once after `WidgetsFlutterBinding.ensureInitialized()`,
-then mount a surface in your widget tree:
+Install [`flutter_servo` from pub.dev](https://pub.dev/packages/flutter_servo):
+
+```bash
+flutter pub add flutter_servo
+```
+
+Initialize Servo after `WidgetsFlutterBinding.ensureInitialized()`, then
+mount a surface in your widget tree:
 
 ```dart
 await FlutterServo.init();
@@ -42,14 +47,19 @@ usage and [native build setup](docs/native-builds.md) for build options.
 
 ## Precompiled Servo
 
-Compiling Servo from source is slow. We publish precompiled Linux and Windows
-x64 libraries so Flutter apps can skip that Rust build. Downloads are opt-in
-via `prebuilt_native_tag`; Flutter still builds the app and its desktop plugin.
+To skip compiling Servo on Linux or Windows x64, add this to your app's
+`pubspec.yaml` for `flutter_servo` 0.1.2:
 
-The first pub.dev upload hit a restriction on helper files under `hook/`.
-The helper has moved out of that directory. Until the upload is confirmed,
-use the [Git dependency and matching binary release](docs/native-builds.md#precompiled-libraries).
-There is no announced pub.dev release date.
+```yaml
+hooks:
+  user_defines:
+    flutter_servo:
+      prebuilt_native_tag: native-v0.1.2
+```
+
+The first build downloads Servo; later builds reuse it. Omit the setting to
+build from source. See the [native build guide](docs/native-builds.md#precompiled-libraries)
+for offline setup and system requirements.
 
 ## Example Browser
 

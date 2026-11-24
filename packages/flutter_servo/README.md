@@ -16,7 +16,8 @@ Servo isn't a drop-in replacement for Chromium's web compatibility.
 
 ## Embed a Page
 
-Initialize the package once before mounting a surface:
+Install the package with `flutter pub add flutter_servo`, then initialize it
+once before mounting a surface:
 
 ```dart
 await FlutterServo.init();
@@ -39,17 +40,20 @@ for platform differences.
 
 ## Precompiled Servo
 
-Skip the slow Servo source build on Linux and Windows x64 by setting
-`hooks.user_defines.flutter_servo.prebuilt_native_tag` in your app's
-`pubspec.yaml`. Use `native-v0.1.2` with package version `0.1.2`. For offline
-builds, use `prebuilt_native_directory` with an already extracted archive.
-Omit both settings to build Servo from source.
+To skip compiling Servo on Linux or Windows x64, add this to your app's
+`pubspec.yaml` for `flutter_servo` 0.1.2:
 
-The initial pub.dev upload was rejected because its download helper was
-under `hook/`. The helper has been moved; until publication is confirmed,
-use a Git dependency. See the
+```yaml
+hooks:
+  user_defines:
+    flutter_servo:
+      prebuilt_native_tag: native-v0.1.2
+```
+
+The first build downloads Servo; later builds reuse it. Omit the setting to
+build from source. See the
 [native build guide](https://github.com/richyo-codes/flutter_servo/blob/main/docs/native-builds.md#precompiled-libraries)
-for the matching Git revision, download settings, and prerequisites.
+for offline setup and system requirements.
 
 ## Build and Test
 
