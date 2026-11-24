@@ -37,20 +37,8 @@ class FlutterServo {
   static Future<bool> reload() => _navigate('reload');
 
   static Future<bool> _navigate(String command) async {
-    final controller = BackendSession.webview;
-    if (controller != null) {
-      switch (command) {
-        case 'goBack':
-          if (!await controller.canGoBack()) return false;
-          await controller.goBack();
-        case 'goForward':
-          if (!await controller.canGoForward()) return false;
-          await controller.goForward();
-        case 'reload':
-          await controller.reload();
-      }
-      return true;
-    }
+    final navigateWebView = BackendSession.webview;
+    if (navigateWebView != null) return navigateWebView(command);
     if (resolveFlutterServoBackend(BackendSession.preference) !=
         FlutterServoBackend.servo) {
       return false;

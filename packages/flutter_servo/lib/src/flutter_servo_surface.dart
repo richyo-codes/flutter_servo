@@ -59,6 +59,14 @@ class FlutterServoController {
 
   Future<bool> reload() => _attached._navigate('reload');
 
+  /// Request removal of cookies across the backend's cookie store, not just
+  /// the displayed origin. This is not an isolated browsing session.
+  Future<void> clearCookies() => _attached._clearData(null);
+
+  /// Request removal of cookies and local/session web storage for a Servo
+  /// site name. Does not remove HTTP cache, IndexedDB, or downloaded files.
+  Future<void> clearSiteData(String site) => _attached._clearData(site);
+
   /// Set desktop page zoom between 0.5 and 3.0.
   void setZoom(double zoom) => _attached._setZoom(zoom);
 }
@@ -78,9 +86,17 @@ class FlutterServoSurface extends StatefulWidget {
        enableContextMenu = config.enableContextMenu,
        onLoadStateChanged = config.onLoadStateChanged,
        onLoadProgressChanged = config.onLoadProgressChanged,
+       onLoadPercentChanged = config.onLoadPercentChanged,
        onNavigationStateChanged = config.onNavigationStateChanged,
        onWheelZoom = config.onWheelZoom,
        onError = config.onError,
+       onTitleChanged = config.onTitleChanged,
+       onPopupBlocked = config.onPopupBlocked,
+       onDownloadRequested = config.onDownloadRequested,
+       allowGeolocation = config.allowGeolocation,
+       onPermissionDenied = config.onPermissionDenied,
+       onPickUploadFiles = config.onPickUploadFiles,
+       allowNavigation = config.allowNavigation,
        loadTimeout = config.loadTimeout,
        reloadRevision = reloadRevisionOverride ?? config.reloadRevision,
        pageZoom = zoomOverride ?? config.pageZoom,
@@ -95,9 +111,17 @@ class FlutterServoSurface extends StatefulWidget {
     this.enableContextMenu = false,
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
+    this.onLoadPercentChanged,
     this.onNavigationStateChanged,
     this.onWheelZoom,
     this.onError,
+    this.onTitleChanged,
+    this.onPopupBlocked,
+    this.onDownloadRequested,
+    this.allowGeolocation,
+    this.onPermissionDenied,
+    this.onPickUploadFiles,
+    this.allowNavigation,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
     this.pageZoom = 1.0,
@@ -114,9 +138,17 @@ class FlutterServoSurface extends StatefulWidget {
     this.enableContextMenu = false,
     this.onLoadStateChanged,
     this.onLoadProgressChanged,
+    this.onLoadPercentChanged,
     this.onNavigationStateChanged,
     this.onWheelZoom,
     this.onError,
+    this.onTitleChanged,
+    this.onPopupBlocked,
+    this.onDownloadRequested,
+    this.allowGeolocation,
+    this.onPermissionDenied,
+    this.onPickUploadFiles,
+    this.allowNavigation,
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
     this.pageZoom = 1.0,
@@ -134,12 +166,48 @@ class FlutterServoSurface extends StatefulWidget {
   final bool enableContextMenu;
   final ValueChanged<bool>? onLoadStateChanged;
   final ValueChanged<FlutterServoLoadProgress>? onLoadProgressChanged;
+
+  /// OS WebView's estimated progress (0-100), not a completion signal.
+  /// Desktop Servo reports milestones only and never invents a percentage.
+  final ValueChanged<int>? onLoadPercentChanged;
   final ValueChanged<FlutterServoNavigationState>? onNavigationStateChanged;
 
   /// Optional desktop Ctrl+wheel handler: +1 zooms in, -1 zooms out.
   /// Without a handler, Ctrl+wheel is forwarded to Servo like other scrolling.
   final ValueChanged<int>? onWheelZoom;
   final ValueChanged<PlatformException>? onError;
+  final ValueChanged<String?>? onTitleChanged;
+
+  /// Desktop notification, not an authorization prompt. Servo does not supply
+  /// the requested URL. Repeated requests may produce one notification.
+  final VoidCallback? onPopupBlocked;
+
+  /// Android download notification. No file is saved. Only credential-free
+  /// HTTPS destinations are surfaced; MIME type and length are untrusted hints.
+  /// The initiating frame's origin is unknown. Apply a separate destination
+  /// policy before fetching a file; this callback does not authorize it.
+  final void Function(Uri url, String? mimeType, int? contentLength)?
+  onDownloadRequested;
+
+  /// Android WebView only. Receives the requesting HTTPS origin, not the URL
+  /// of the top-level page. A grant is not retained across pages.
+  final bool Function(Uri origin)? allowGeolocation;
+
+  /// Reports backend-specific feature names after denying a permission request
+  /// whose requesting origin is unavailable. Not a grant callback.
+  final ValueChanged<Set<String>>? onPermissionDenied;
+
+  /// Upload picker. Filters are untrusted display hints. Return only files
+  /// explicitly chosen by the user: local file URIs on desktop, content URIs
+  /// on Android, or [] to cancel.
+  final Future<List<Uri>> Function(List<String> acceptTypes, bool multiple)?
+  onPickUploadFiles;
+
+  /// Authorize host URL loads and navigation requests reported by the OS
+  /// WebView. Raw HTML loads are disabled when a policy is installed.
+  /// Desktop reports null frame scope for Servo-originated requests. Mount
+  /// a fresh surface when switching between protected and unrestricted mode.
+  final bool Function(Uri url, bool? isMainFrame)? allowNavigation;
 
   /// Maximum wait for completion after native loading starts; null disables it.
   final Duration? loadTimeout;
@@ -169,7 +237,9 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
       }
     });
   }
+
   final _nativeKey = GlobalKey<_FlutterServoSurfaceState>();
+  late final bool _initialProtected;
   final _mobileKey = GlobalKey<MobileWebViewState>();
   bool _reportedUnsupported = false;
   FlutterServoBackend? _backend;
@@ -181,6 +251,7 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
   @override
   void initState() {
     super.initState();
+    _initialProtected = widget.allowNavigation != null;
     _attach(widget.controller);
   }
 
@@ -255,6 +326,46 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
         false;
   }
 
+  Future<void> _clearData(String? site) async {
+    if (_backend == FlutterServoBackend.webview && site == null) {
+      final mobile = _mobileKey.currentState;
+      if (mobile == null) throw StateError('No active WebView.');
+      await mobile.clearCookies();
+      return;
+    }
+    if (_backend != FlutterServoBackend.servo || _nativeOwner != this) {
+      throw UnsupportedError('This backend cannot clear the requested data.');
+    }
+    if (_nativeKey.currentState?._textureId == null) {
+      throw StateError('No active Servo texture.');
+    }
+    if (site == null) {
+      await _nativeKey.currentState!._clearCookiesConfirmed();
+      return;
+    }
+    if (site.trim().isEmpty) throw ArgumentError.value(site);
+    final accepted = await _FlutterServoSurfaceState._channel
+        .invokeMethod<bool>(
+          'respondToControl',
+          jsonEncode({'type': 'clearSiteData', 'site': site}),
+        );
+    if (accepted != true) {
+      final supported = await _FlutterServoSurfaceState._channel
+          .invokeMethod<bool>(
+            'respondToControl',
+            jsonEncode({'type': 'supportsValidatedSiteClear'}),
+          );
+      if (supported == true) {
+        throw ArgumentError.value(
+          site,
+          'site',
+          'Expected a canonical hostname or IP literal, not a URL.',
+        );
+      }
+      throw UnsupportedError('Native data operation unavailable.');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final backend = resolveFlutterServoBackend(
@@ -264,14 +375,17 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
         backend == FlutterServoBackend.servo &&
         _nativeOwner != null &&
         _nativeOwner != this;
-    _backend = nativeBusy ? null : backend;
+    final modeChanged =
+        backend == FlutterServoBackend.servo &&
+        _initialProtected != (widget.allowNavigation != null);
+    _backend = nativeBusy || modeChanged ? null : backend;
     if (nativeBusy) {
       _waiting.add(this);
     } else {
       _waiting.remove(this);
     }
-    if (backend != FlutterServoBackend.servo) _releaseNative();
-    if (backend == null || nativeBusy) {
+    if (backend != FlutterServoBackend.servo || modeChanged) _releaseNative();
+    if (backend == null || nativeBusy || modeChanged) {
       if (!_reportedUnsupported) {
         _reportedUnsupported = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -280,8 +394,14 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
           widget.onLoadProgressChanged?.call(FlutterServoLoadProgress.failed);
           widget.onError?.call(
             PlatformException(
-              code: nativeBusy ? 'servo-session-in-use' : 'unsupported-backend',
-              message: nativeBusy
+              code: modeChanged
+                  ? 'policy-remount-required'
+                  : nativeBusy
+                  ? 'servo-session-in-use'
+                  : 'unsupported-backend',
+              message: modeChanged
+                  ? 'Mount a fresh surface to change policy mode.'
+                  : nativeBusy
                   ? 'Only one desktop Servo surface can be mounted at a time.'
                   : 'The requested browser backend is unavailable on this platform.',
             ),
@@ -373,6 +493,40 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     await _channel.invokeMethod<bool>('respondToControl', jsonEncode(response));
   }
 
+  static int _nextCookieRequest = 0;
+  int? _cookieRequest;
+  Completer<void>? _cookieCompletion;
+
+  Future<void> _clearCookiesConfirmed() async {
+    if (_cookieRequest != null) {
+      throw StateError('Cookie deletion already pending.');
+    }
+    final id = ++_nextCookieRequest;
+    final completion = Completer<void>();
+    _cookieRequest = id;
+    _cookieCompletion = completion;
+    try {
+      await Future.wait<void>([
+        completion.future,
+        _channel
+            .invokeMethod<bool>(
+              'respondToControl',
+              jsonEncode({'type': 'clearCookiesConfirmed', 'id': id}),
+            )
+            .then((accepted) {
+              if (accepted != true) {
+                throw UnsupportedError(
+                  'Native cookie confirmation unavailable.',
+                );
+              }
+            }),
+      ], eagerError: true).timeout(const Duration(seconds: 15));
+    } finally {
+      _cookieRequest = null;
+      _cookieCompletion = null;
+    }
+  }
+
   void _onSemanticsChanged() {
     if (!SemanticsBinding.instance.semanticsEnabled &&
         _accessibilityNodes.isNotEmpty) {
@@ -446,6 +600,36 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
         }
       case 'contextMenu':
         unawaited(_showPageMenu(event));
+      case 'title':
+        widget.onTitleChanged?.call(event['title'] as String?);
+      case 'popupBlocked':
+        widget.onPopupBlocked?.call();
+      case 'redirectBlocked':
+        _reportError(
+          PlatformException(
+            code: 'redirect-blocked',
+            message: 'Protected desktop navigation cannot authorize this HTTP redirect.',
+          ),
+        );
+      case 'permissionDenied':
+        widget.onPermissionDenied?.call(
+          Set.unmodifiable([event['feature'] as String]),
+        );
+      case 'cookiesCleared':
+        if (_cookieRequest == event['id'] &&
+            _cookieCompletion?.isCompleted == false) {
+          _cookieCompletion!.complete();
+        }
+      case 'navigationRequest':
+        unawaited(
+          _respondToControl({
+            'type': 'navigationDecision',
+            'id': event['id'],
+            'allow': _authorize(event['url'] as String, null),
+          }),
+        );
+      case 'filePicker':
+        unawaited(_pickUploadFiles(event));
       case 'hideContextMenu':
         if (_menuId == event['id']) _hideMenu();
       case 'hideIme':
@@ -472,6 +656,57 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           size: box.size,
           transform: box.getTransformTo(null),
         );
+    }
+  }
+
+  Future<void> _pickUploadFiles(Map<String, dynamic> event) async {
+    final picker = widget.onPickUploadFiles;
+    final owner = widget.controller;
+    var paths = <String>[];
+    try {
+      if (picker != null) {
+        final files = await picker(
+          List<String>.unmodifiable(event['filters'] as List),
+          event['multiple'] == true,
+        ).timeout(const Duration(minutes: 2));
+        if (mounted &&
+            widget.controller == owner &&
+            widget.onPickUploadFiles == picker &&
+            files.every(
+              (f) =>
+                  f.scheme == 'file' &&
+                  f.authority.isEmpty &&
+                  !f.hasQuery &&
+                  !f.hasFragment,
+            )) {
+          paths = files.map((f) => f.toFilePath()).toList();
+        }
+      }
+    } catch (_) {
+      paths = [];
+    }
+    if (!mounted) return;
+    try {
+      await _respondToControl({
+        'type': 'filePicker',
+        'id': event['id'],
+        'paths': paths,
+      });
+    } on PlatformException {
+      // The native owner may already have dismissed the request.
+    } on MissingPluginException {
+      // The engine has shut down.
+    }
+  }
+
+  bool _authorize(String value, bool? mainFrame) {
+    final policy = widget.allowNavigation;
+    final uri = Uri.tryParse(value);
+    if (policy == null || uri == null || !uri.hasScheme) return false;
+    try {
+      return policy(uri, mainFrame);
+    } catch (_) {
+      return false;
     }
   }
 
@@ -552,6 +787,11 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
     SemanticsBinding.instance.removeSemanticsEnabledListener(
       _onSemanticsChanged,
     );
+    if (_cookieCompletion?.isCompleted == false) {
+      _cookieCompletion!.completeError(
+        StateError('Surface closed before cookie deletion confirmation.'),
+      );
+    }
     _hideMenu();
     _textInput.close();
     _loadTimeoutTimer?.cancel();
@@ -873,9 +1113,27 @@ class _FlutterServoSurfaceState extends State<FlutterServoSurface> {
           _lastRenderedRevision = widget.reloadRevision;
           var loaded = false;
           try {
-            await _channel.invokeMethod<void>(widget.contentType.methodName, [
-              content,
-            ]);
+            final protected = widget.allowNavigation != null;
+            if (protected &&
+                (widget.contentType != FlutterServoContentType.url ||
+                    !_authorize(content, true))) {
+              throw PlatformException(
+                code: 'navigation-denied',
+                message: 'Host policy denied this load.',
+              );
+            }
+            try {
+              await _channel.invokeMethod<void>(
+                protected ? 'setPolicyUrl' : widget.contentType.methodName,
+                [content],
+              );
+            } on MissingPluginException {
+              if (!protected) rethrow;
+              throw PlatformException(
+                code: 'unsupported-navigation-policy',
+                message: 'Native policy unavailable.',
+              );
+            }
             loaded = true;
           } catch (_) {
             _lastRenderedContent = previousContent;
