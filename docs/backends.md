@@ -11,17 +11,29 @@ and Windows, and `webview_flutter` on Android/iOS. macOS and Flutter web current
 report `unsupported-backend`; there is no silent engine substitution there.
 
 ```dart
-await FlutterServo.init(backend: FlutterServoBackend.auto);
+await FlutterServo.init(); // Choose the platform default.
+```
 
+To require Servo on Linux or Windows, choose it as the app default:
+
+```dart
+await FlutterServo.init(backend: FlutterServoBackend.servo);
+```
+
+Or require it for just one surface:
+
+```dart
 FlutterServoSurface.url(
   content: 'https://example.com',
   fallback: const SizedBox.shrink(),
-  backend: FlutterServoBackend.webview, // Optional per-surface override.
+  backend: FlutterServoBackend.servo,
   onError: (error) => debugPrint(error.message),
 );
 ```
 
-An explicit unsupported choice reports an error and displays the fallback.
+Use `FlutterServoBackend.webview` to require the system WebView on Android
+or iOS. An explicit unsupported choice reports an error and displays the
+fallback rather than selecting another engine.
 Select your backend before mounting a surface. Use
 `resolveFlutterServoBackend(...)` and its capability getters to decide which
 settings to display. The static navigation API currently supports one active
