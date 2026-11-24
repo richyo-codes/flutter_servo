@@ -3,6 +3,11 @@ description: "Flutter package for embedding Servo-backed web content."
 version: 0.1.2
 repository: https://github.com/richyo-codes/flutter_servo
 issue_tracker: https://github.com/richyo-codes/flutter_servo/issues
+topics:
+  - webview
+  - browser
+  - servo
+  - desktop
 
 environment:
   sdk: ^3.13.0
