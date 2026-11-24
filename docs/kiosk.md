@@ -4,8 +4,10 @@
 `native-v0.1.2` binary predates the origin policy. Setting the environment
 variable with that binary does not enable the restriction.
 
-Use `FlutterServoBackend.auto.hostControls()` to decide which controls to
-offer on this platform. For example, `FlutterServoHostControl.downloadNotification`
+When your app explicitly selects an engine, query that engine's
+`hostControls()` rather than the platform default. For example,
+`FlutterServoBackend.servo.hostControls()` describes the Servo adapter.
+`FlutterServoHostControl.downloadNotification`
 is available on Android WebView, while `FlutterServoHostControl.ephemeralLaunch`
 describes a desktop launch option. This query describes the source adapter;
 it does not inspect the native binary, grant permissions, or certify a kiosk.
