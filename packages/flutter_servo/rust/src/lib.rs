@@ -1,11 +1,11 @@
-pub mod api;
 #[cfg(feature = "servo-engine")]
 mod accessibility;
+pub mod api;
 #[cfg(feature = "servo-engine")]
 mod embedder_controls;
-mod frb_generated;
 #[cfg(any(feature = "servo-engine", test))]
 mod frame_size;
+mod frb_generated;
 #[cfg(feature = "servo-engine")]
 mod gpu_context;
 #[cfg(any(feature = "servo-engine", test))]

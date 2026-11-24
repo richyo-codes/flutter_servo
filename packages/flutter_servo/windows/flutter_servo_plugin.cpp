@@ -357,7 +357,7 @@ private:
       result->Success();
       return;
     }
-    if (method == "setUrl" || method == "setHtml") {
+    if (method == "setUrl" || method == "setPolicyUrl" || method == "setHtml") {
       const auto *text = list && list->size() == 1
                              ? std::get_if<std::string>(&(*list)[0])
                              : nullptr;
@@ -375,7 +375,12 @@ private:
         result->Error("session-create-failed", error);
         return;
       }
-      const bool accepted = method == "setUrl"
+      if (method == "setPolicyUrl" && (!bridge_->control_response ||
+          !bridge_->control_response(session_, R"({"type":"requireNavigationPolicy"})"))) {
+        result->Error("unsupported-navigation-policy", "Native policy unavailable.");
+        return;
+      }
+      const bool accepted = method != "setHtml"
                                 ? bridge_->set_url(session_, text->c_str())
                                 : bridge_->set_html(session_, text->c_str());
       if (!accepted) {

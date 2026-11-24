@@ -73,6 +73,8 @@ impl EventLoopWaker for SessionWaker {
 }
 
 struct SessionDelegate {
+    host_navigation_policy: Cell<bool>,
+    allowed_origins: Option<Rc<Vec<url::Origin>>>,
     cursor_update: Cell<Option<servo::Cursor>>,
     document_ready: Cell<bool>,
     frame_ready: Cell<bool>,
@@ -87,6 +89,8 @@ struct SessionDelegate {
 impl Default for SessionDelegate {
     fn default() -> Self {
         Self {
+            allowed_origins: None,
+            host_navigation_policy: Cell::new(false),
             cursor_update: Cell::new(Some(servo::Cursor::Default)),
             document_ready: Cell::new(false),
             frame_ready: Cell::new(false),
@@ -123,6 +127,58 @@ impl SessionDelegate {
 }
 
 impl WebViewDelegate for SessionDelegate {
+    fn load_web_resource(&self, _webview: WebView, load: servo::WebResourceLoad) {
+        if load.request().is_redirect
+            && (self.host_navigation_policy.get() || self.allowed_origins.is_some())
+        {
+            // In this Servo version the interceptor supplies request.url(),
+            // the first URL in the chain, not the redirect destination.
+            let main_frame = load.request().is_for_main_frame;
+            let response = servo::WebResourceResponse::new(load.request().url.clone().into_url());
+            load.intercept(response).cancel();
+            if main_frame && !self.crashed.get() {
+                self.controls.borrow_mut().redirect_blocked();
+            }
+        }
+    }
+    fn request_permission(&self, _webview: WebView, request: servo::PermissionRequest) {
+        let feature = format!("{:?}", request.feature());
+        request.deny();
+        if !self.crashed.get() {
+            self.controls.borrow_mut().permission_denied(feature);
+        }
+    }
+    fn request_create_new(&self, _parent: WebView, request: servo::CreateNewWebViewRequest) {
+        // Without a destination URL we cannot authorize or safely externalize it.
+        drop(request);
+        if !self.crashed.get() {
+            self.controls.borrow_mut().popup_blocked();
+        }
+    }
+
+    fn request_navigation(&self, _webview: WebView, request: servo::NavigationRequest) {
+        if self
+            .allowed_origins
+            .as_ref()
+            .is_none_or(|origins| permits_origin(origins, &request.url))
+        {
+            if self.crashed.get() {
+                request.deny();
+            } else if self.host_navigation_policy.get() {
+                self.controls.borrow_mut().request_navigation(request);
+            } else {
+                request.allow();
+            }
+        } else {
+            request.deny();
+        }
+    }
+    fn notify_page_title_changed(&self, _webview: WebView, title: Option<String>) {
+        if !self.crashed.get() {
+            self.controls.borrow_mut().title_changed(title);
+        }
+    }
+
     fn notify_cursor_changed(&self, _webview: WebView, cursor: servo::Cursor) {
         if !self.crashed.get() {
             self.cursor_update.set(Some(cursor));
@@ -156,6 +212,9 @@ impl WebViewDelegate for SessionDelegate {
             return;
         }
         render_log!("flutter_servo: rust delegate load status {status:?}");
+        if matches!(status, LoadStatus::Started) {
+            self.controls.borrow_mut().cancel_picker();
+        }
         if matches!(status, LoadStatus::HeadParsed | LoadStatus::Complete) {
             self.document_ready.set(true);
         }
@@ -181,6 +240,9 @@ impl WebViewDelegate for SessionDelegate {
 }
 
 struct ServoRenderSession {
+    ephemeral_storage: bool,
+    cookie_clear_pending: Rc<Cell<bool>>,
+    cookie_clear_done: Rc<Cell<Option<u64>>>,
     rendering_context: Option<Rc<dyn RenderingContext>>,
     servo: Option<Servo>,
     delegate: Rc<SessionDelegate>,
@@ -201,6 +263,16 @@ struct ServoRenderSession {
 
 impl ServoRenderSession {
     fn new(proxy_overrides: ProxyOverrides) -> Result<Self, String> {
+        let opts = storage_options(std::env::var_os("FLUTTER_SERVO_EPHEMERAL").as_deref())?;
+        let ephemeral_storage = opts.temporary_storage && opts.config_dir.is_none();
+        let allowed_origins = std::env::var_os("FLUTTER_SERVO_ALLOWED_ORIGINS")
+            .map(|value| {
+                let value = value
+                    .into_string()
+                    .map_err(|_| "Invalid navigation policy encoding")?;
+                parse_origins(&value).map(Rc::new)
+            })
+            .transpose()?;
         render_log!("flutter_servo: rust session new start");
         let size = PhysicalSize::new(800, 600);
         render_log!("flutter_servo: rust session creating rendering context");
@@ -259,6 +331,7 @@ impl ServoRenderSession {
                 .map_err(|error| format!("wake channel init failed: {error}"))?,
         );
         let servo = ServoBuilder::default()
+            .opts(opts)
             .preferences(preferences)
             .event_loop_waker(Box::new(SessionWaker {
                 pending: wake_pending.clone(),
@@ -268,9 +341,15 @@ impl ServoRenderSession {
             }))
             .build();
 
-        let delegate = Rc::new(SessionDelegate::default());
+        let delegate = Rc::new(SessionDelegate {
+            allowed_origins,
+            ..SessionDelegate::default()
+        });
 
         Ok(Self {
+            cookie_clear_pending: Default::default(),
+            ephemeral_storage,
+            cookie_clear_done: Default::default(),
             rendering_context: Some(rendering_context),
             servo: Some(servo),
             delegate,
@@ -296,12 +375,23 @@ impl ServoRenderSession {
         let Ok(url) = Url::parse(url) else {
             return false;
         };
+        if self
+            .delegate
+            .allowed_origins
+            .as_ref()
+            .is_some_and(|origins| !permits_origin(origins, &url))
+        {
+            return false;
+        }
         self.content = SessionContent::Url(url);
         self.pending_navigation = true;
         true
     }
 
     fn set_html(&mut self, html: &str) -> bool {
+        if self.delegate.allowed_origins.is_some() {
+            return false;
+        }
         self.content = SessionContent::Html(html.to_owned());
         self.pending_navigation = true;
         true
@@ -618,7 +708,11 @@ impl ServoRenderSession {
                     return false;
                 };
                 // Keep the engine/context, but isolate callbacks from the failed WebView.
-                let delegate = Rc::new(SessionDelegate::default());
+                let delegate = Rc::new(SessionDelegate {
+                    allowed_origins: self.delegate.allowed_origins.clone(),
+                    host_navigation_policy: self.delegate.host_navigation_policy.clone(),
+                    ..SessionDelegate::default()
+                });
                 let webview = WebViewBuilder::new(servo, rendering_context.clone())
                     .delegate(delegate.clone())
                     .hidpi_scale_factor(Scale::new(self.display_scale))
@@ -699,6 +793,130 @@ fn copy_image_into_buffer(image: &RgbaImage, width: u32, height: u32, out_rgba: 
 
     out_rgba.copy_from_slice(raw);
     true
+}
+
+fn storage_options(value: Option<&std::ffi::OsStr>) -> Result<servo::Opts, &'static str> {
+    let mut opts = servo::Opts::default();
+    match value.map(std::ffi::OsStr::to_str) {
+        None | Some(Some("0")) => {}
+        Some(Some("1")) => {
+            opts.config_dir = None;
+            opts.temporary_storage = true;
+        }
+        _ => return Err("FLUTTER_SERVO_EPHEMERAL must be 0 or 1"),
+    }
+    Ok(opts)
+}
+
+#[cfg(test)]
+mod storage_policy_tests {
+    use super::*;
+
+    #[test]
+    fn ephemeral_uses_temporary_storage_without_a_profile_directory() {
+        let opts = storage_options(Some("1".as_ref())).unwrap();
+        assert!(opts.config_dir.is_none());
+        assert!(opts.temporary_storage);
+        assert!(storage_options(Some("true".as_ref())).is_err());
+        assert!(storage_options(Some("".as_ref())).is_err());
+        assert_eq!(
+            storage_options(None).unwrap().temporary_storage,
+            servo::Opts::default().temporary_storage
+        );
+    }
+}
+
+fn permits_origin(origins: &[url::Origin], url: &Url) -> bool {
+    url.scheme() == "https"
+        && url.username().is_empty()
+        && url.password().is_none()
+        && origins.contains(&url.origin())
+}
+
+fn parse_origins(value: &str) -> Result<Vec<url::Origin>, &'static str> {
+    if value.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    value
+        .split(',')
+        .map(|entry| {
+            let invalid = "Expected a comma-separated list of HTTPS origins";
+            let entry = entry.trim();
+            // URL parsing normalizes dot segments and missing or extra slashes.
+            // Reject non-origin syntax before that information is lost.
+            let (scheme, rest) = entry.split_once("://").ok_or(invalid)?;
+            let authority = rest.strip_suffix('/').unwrap_or(rest);
+            if !scheme.eq_ignore_ascii_case("https")
+                || authority.is_empty()
+                || authority.ends_with(':')
+                || authority.contains(['/', '\\', '?', '#', '@'])
+                || authority
+                    .chars()
+                    .any(|c| c.is_control() || c.is_whitespace())
+            {
+                return Err(invalid);
+            }
+            let url = Url::parse(entry).map_err(|_| invalid)?;
+            if url.scheme() != "https"
+                || url.host().is_none()
+                || !url.username().is_empty()
+                || url.password().is_some()
+                || url.path() != "/"
+                || url.query().is_some()
+                || url.fragment().is_some()
+            {
+                return Err(invalid);
+            }
+            Ok(url.origin())
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod origin_policy_tests {
+    use super::*;
+
+    #[test]
+    fn rejects_malformed_entries_before_url_normalization() {
+        assert!(parse_origins(" HTTPS://[::1]:8443/ , https://kiosk.example ").is_ok());
+        for entry in [
+            "https:kiosk.example",
+            "https:///kiosk.example",
+            "https://kiosk.example/path/..",
+            "https://kiosk.example/%2e",
+            "https://kiosk.example\\",
+            "https://ki\tosk.example",
+            "https://@kiosk.example",
+            "https://kiosk.example:",
+            "",
+        ] {
+            assert!(parse_origins(&format!("https://ok.example,{entry}")).is_err());
+        }
+    }
+
+    #[test]
+    fn matches_only_the_configured_https_origin() {
+        let allowed = parse_origins("https://KIOSK.example:443").unwrap();
+        assert!(permits_origin(
+            &allowed,
+            &Url::parse("https://kiosk.example/page").unwrap()
+        ));
+        for target in [
+            "https://kiosk.example.invalid",
+            "https://kiosk.example:444",
+            "http://kiosk.example",
+            "https://name@kiosk.example",
+            "blob:https://kiosk.example/id",
+            "file:///tmp/page",
+        ] {
+            assert!(
+                !permits_origin(&allowed, &Url::parse(target).unwrap()),
+                "{target}"
+            );
+        }
+        assert!(parse_origins("https://kiosk.example/path").is_err());
+        assert!(parse_origins("").unwrap().is_empty());
+    }
 }
 
 fn data_url_for_html(html: &str) -> Result<Url, String> {
