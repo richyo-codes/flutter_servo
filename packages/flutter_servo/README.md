@@ -43,6 +43,10 @@ back and forward, reload, or set desktop zoom. Use one controller per
 surface. The desktop native plugin currently supports one mounted surface
 per engine; controlled mobile WebViews can be mounted independently.
 
+Building a kiosk? See [navigation restrictions and visitor data](https://github.com/richyo-codes/flutter_servo/blob/main/docs/kiosk.md)
+before enabling remote content. These controls require a matching native build
+and are not a substitute for OS isolation or outbound network policy.
+
 ## Precompiled Servo
 
 To skip compiling Servo on Linux or Windows x64, add this to your app's
