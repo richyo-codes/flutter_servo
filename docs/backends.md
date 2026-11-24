@@ -59,6 +59,9 @@ Desktop Servo runs inside the host process. The Linux Flatpak confines the
 whole application, with network, display, and GPU access. Per-page isolation
 would require a separate Servo worker and an IPC boundary.
 
+See [Embedding in a kiosk](kiosk.md) for the desktop navigation allowlist,
+cookie and site-data scope, and deployment checks.
+
 Run a bundled demo without networking using the installed Flatpak:
 
 ```bash

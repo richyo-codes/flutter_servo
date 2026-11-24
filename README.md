@@ -82,6 +82,9 @@ flutter run -d linux
 
 ## Guides
 
+For managed displays, see [Embedding in a kiosk](docs/kiosk.md) for the
+desktop origin allowlist, visitor data cleanup, and their limits.
+
 - [Linux builds and GTK4 setup](docs/linux.md)
 - [Windows builds](docs/windows.md)
 - [Native libraries and Rust builds](docs/native-builds.md)
