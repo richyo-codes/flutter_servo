@@ -89,7 +89,7 @@ for ((i=0; i<120; i++)); do
     if [[ -n "$3" ]] || "$5" "$2/browser.png" -depth 8 -format %c histogram:info:- |
         awk '
           $1 + 0 >= 1500 && /#9FCEC0/ { chart = 1 }
-          $1 + 0 >= 1500 && /#D98F47/ { illustration = 1 }
+          $1 + 0 >= 1500 && /#102538/ { illustration = 1 }
           $1 + 0 >= 1500 && /#D5E2D2/ { table = 1 }
           END { exit !(chart && illustration && table) }
         '; then

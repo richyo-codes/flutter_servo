@@ -2,7 +2,7 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Harbour Watch | Tide Report</title>
+<title>Space Weather | Polar Observatory</title>
 <style>
   * { box-sizing: border-box; }
   body { margin: 0; background: #f5f1e8; color: #183b37; font: 15px/1.45 "Trebuchet MS", sans-serif; }
@@ -36,63 +36,41 @@
   }
 </style>
 <main>
-  <header>
-    <strong class="label">Harbour Watch / Field Notes</strong>
-    <span class="label">Atlantic coast &nbsp; / &nbsp; 014</span>
-  </header>
-  <div class="intro">
-    <h1>Bay of Fundy Tide Report</h1>
-    <p>Illustrative station readings for Canada's Atlantic coast.</p>
-  </div>
+  <header><strong class="label">Polar Observatory</strong><span class="label">Field bulletin / 014</span></header>
+  <div class="intro"><h1>Space Weather</h1><p>A day of geomagnetic activity over the northern sky. Illustrative data, not a live forecast.</p></div>
   <div class="grid">
     <article>
-      <div class="chart-head">
-        <div><span class="label">Station NB-01</span><h2>Saint John water levels</h2></div>
-        <strong>7.4 m</strong>
-      </div>
-      <svg class="chart" viewBox="0 0 570 205" role="img" aria-label="Two rising and falling tide cycles over 24 hours">
-        <g fill="none" stroke="#d2d9cb">
-          <path d="M42 30H552 M42 76H552 M42 122H552 M42 168H552"/>
-        </g>
-        <path fill="#9fcec0" d="M43 144 C80 140 97 32 153 32 S229 155 282 153 S354 45 408 41 S493 139 550 147 V168H43Z"/>
-        <path fill="none" stroke="#1d6a5e" stroke-width="3" d="M43 144 C80 140 97 32 153 32 S229 155 282 153 S354 45 408 41 S493 139 550 147"/>
-        <circle cx="153" cy="32" r="5" fill="#1d6a5e"/>
-        <g fill="#475f58" font-family="monospace" font-size="12">
-          <text x="10" y="34">8 m</text><text x="10" y="80">6 m</text>
-          <text x="10" y="126">4 m</text><text x="10" y="172">2 m</text>
-          <text x="42" y="191">00:00</text><text x="158" y="191">06:00</text>
-          <text x="275" y="191">12:00</text><text x="391" y="191">18:00</text>
-          <text x="517" y="191">24:00</text>
+      <div class="chart-head"><div><span class="label">Planetary K index / UTC</span><h2>Geomagnetic activity</h2></div><strong>Peak Kp 6</strong></div>
+      <svg class="chart" viewBox="0 0 570 205" role="img" aria-label="Three-hour Kp values: 2, 2, 3, 4, 6, 5, 4, 3">
+        <path fill="none" stroke="#cad7cc" d="M32 30H552 M32 76H552 M32 122H552 M32 168H552"/>
+        <path fill="#9fcec0" d="M36 122h56v46H36z M101 122h56v46h-56z M166 99h56v69h-56z M231 76h56v92h-56z M426 76h56v92h-56z M491 99h56v69h-56z"/>
+        <path fill="#1d6a5e" d="M296 30h56v138h-56z M361 53h56v115h-56z"/>
+        <g fill="#475f58" font-family="monospace" font-size="13">
+          <text x="8" y="34">6</text><text x="8" y="80">4</text><text x="8" y="126">2</text><text x="8" y="172">0</text>
+          <text x="36" y="191">00:00</text><text x="166" y="191">06:00</text><text x="296" y="191">12:00</text><text x="426" y="191">18:00</text>
         </g>
       </svg>
     </article>
     <figure>
-      <svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustrated lighthouse on a rocky Atlantic shore">
-        <path fill="#efd9ab" d="M0 0H400V225H0Z"/>
-        <circle cx="286" cy="65" r="37" fill="#d98f47"/>
-        <path fill="#9caa8a" d="M0 107 56 78 99 104 155 80 219 120 280 102 400 122V225H0Z"/>
-        <path fill="#66988a" d="M0 130Q120 114 220 140T400 129V225H0Z"/>
-        <path fill="none" stroke="#d9e4ce" stroke-width="2" d="M160 154q66-11 116 0m-24 15q70-13 123 0m-182 15q50-8 90 0m18 22q40-6 64 0"/>
-        <path fill="#264942" d="M0 160 44 142 82 148 114 166 151 169 188 193 228 225H0Z"/>
-        <path fill="#437066" d="M0 191 46 172 99 182 130 176 169 194 157 206 203 225H0Z"/>
-        <path fill="#fbefcb" d="m60 146 6-61h23l7 64Z"/>
-        <path fill="#a95139" d="m63 114 2-14h26l2 14ZM60 81l17-17 17 17Z"/>
-        <path fill="#233e38" d="M66 81h23v9H66zM75 133h8v15h-8z"/>
-        <path fill="none" stroke="#263e35" stroke-width="1.6" d="M235 48q7-6 14 0 7-6 14 0m59-14q6-5 12 0 6-5 12 0"/>
+      <svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Green auroral curtains above a dark mountain ridge">
+        <defs><linearGradient id="veil" x2=".25" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#102538"/><stop offset=".6" stop-color="#378e85"/><stop offset="1" stop-color="#a5f3ad"/></linearGradient></defs>
+        <path fill="#102538" d="M0 0h400v225H0z"/>
+        <g fill="#e0ead9"><circle cx="40" cy="31" r="1.5"/><circle cx="169" cy="24" r="2"/><circle cx="205" cy="57" r="1"/><circle cx="310" cy="29" r="1.5"/><circle cx="89" cy="83" r="1.5"/></g>
+        <path fill="url(#veil)" d="M-10 115Q85 80 145 82T270 49T415 10V58Q335 46 267 97T131 112T-10 153Z"/>
+        <path fill="none" stroke="#a5f3ad" stroke-width="2" d="M-10 153Q65 108 131 112T267 97T415 58"/>
+        <path fill="#365969" d="m0 177 67-41 48 32 87-52 79 52 58-31 61 40v48H0z"/>
+        <path fill="#172e37" d="m0 159 72 25 47-12 59 27 74-26 61 12 87-32v72H0z"/>
       </svg>
-      <figcaption><span class="label">Field illustration</span>Headland light, outer Fundy coast</figcaption>
+      <figcaption><span class="label">Sky atlas / Plate 07</span>Auroral arc above the Arctic horizon</figcaption>
     </figure>
   </div>
-  <section aria-labelledby="stations">
-    <h2 id="stations">Station readings</h2>
-    <table>
-      <thead><tr><th scope="col">Station</th><th scope="col">Province</th><th scope="col">High tide</th><th scope="col">Low tide</th><th scope="col">Range</th></tr></thead>
-      <tbody>
-        <tr><th scope="row">Saint John</th><td>New Brunswick</td><td>7.4 m</td><td>1.3 m</td><td>6.1 m</td></tr>
-        <tr><th scope="row">Digby</th><td>Nova Scotia</td><td>8.6 m</td><td>1.6 m</td><td>7.0 m</td></tr>
-        <tr><th scope="row">Burntcoat Head</th><td>Nova Scotia</td><td>13.5 m</td><td>1.2 m</td><td>12.3 m</td></tr>
-      </tbody>
-    </table>
+  <section aria-labelledby="stations"><h2 id="stations">Magnetometer log</h2>
+    <table><thead><tr><th>Station</th><th>Region</th><th>Time (UTC)</th><th>Northward field change</th></tr></thead>
+    <tbody>
+      <tr><th scope="row">Yellowknife</th><td>Northwest Territories</td><td>14:00</td><td>-184 nT</td></tr>
+      <tr><th scope="row">Iqaluit</th><td>Nunavut</td><td>14:00</td><td>-126 nT</td></tr>
+      <tr><th scope="row">Churchill</th><td>Manitoba</td><td>14:00</td><td>-92 nT</td></tr>
+    </tbody></table>
   </section>
 </main>
 </html>
