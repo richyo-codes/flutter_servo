@@ -52,6 +52,23 @@ def main(library_path):
     def send(**event):
         return respond(session, json.dumps(event).encode())
 
+    def click_painted_control(rgb, description):
+        # Accessibility updates can precede the compositor's new scene. Click
+        # once, only after this fixture (not its predecessor) paints the target.
+        x, y = 400, 40
+        offset = (480 * y + x) * 4
+        deadline = time.monotonic() + 15
+        last = None
+        while time.monotonic() < deadline:
+            if render(session, 480, 300, pixels, len(pixels)):
+                last = pixels[offset:offset + 3]
+                if last == rgb:
+                    assert button(session, x, y, 0, True)
+                    assert button(session, x, y, 0, False)
+                    return
+            time.sleep(0.02)
+        raise AssertionError(f"{description} never painted at {(x, y)}: last RGB {last!r}")
+
     def wait_for(predicate, description, event_type="accessibilityTree"):
         deadline = time.monotonic() + 15
         last_nodes = None
@@ -114,14 +131,13 @@ def main(library_path):
         if "--popup" in sys.argv[2:]:
             assert send(type="accessibilityEnabled", enabled=True)
             assert load(session, b"""
-              <button style="position:fixed; inset:0; width:100%;height:100%"
+              <button style="appearance:none;background:#267351;position:fixed; inset:0; width:100%;height:100%"
                 onclick="document.title = window.open('about:blank') === null
                     ? 'popup denied' : 'popup created'">Request popup</button>
             """)
             wait_for(lambda nodes: next((n for n in nodes if n["value"] == "Request popup"), None),
                      "the popup button")
-            assert button(session, 20, 20, 0, True)
-            assert button(session, 20, 20, 0, False)
+            click_painted_control(bytes.fromhex("267351"), "popup button")
             seen = set()
 
             def popup_result(message):
@@ -139,7 +155,7 @@ def main(library_path):
             return
         assert send(type="accessibilityEnabled", enabled=True)
         assert load(session, b"""
-          <input type=file aria-label="Select fixture" style="position:fixed;inset:0;width:100%;height:100%">
+          <input type=file aria-label="Select fixture" style="background:#305796;position:fixed;inset:0;width:100%;height:100%">
           <script>document.querySelector('input').onchange = async e => {
             const f = e.target.files[0];
             document.title = f.name + ':' + await f.text();
@@ -147,8 +163,7 @@ def main(library_path):
         """)
         wait_for(lambda nodes: True if any(n.get("value") == "Choose file" for n in nodes)
                  else None, "the file input")
-        assert button(session, 20, 20, 0, True)
-        assert button(session, 20, 20, 0, False)
+        click_painted_control(bytes.fromhex("305796"), "file input")
         picker = wait_for(lambda e: e, "the file picker", "filePicker")
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "selected.txt"
