@@ -60,6 +60,7 @@ class BrowserPage extends StatefulWidget {
 }
 
 class _BrowserPageState extends State<BrowserPage> {
+  final _surfaceController = FlutterServoController();
   static const _bookmarksKey = 'browser.bookmarks';
 
   late final TextEditingController _addressController = TextEditingController(
@@ -302,7 +303,7 @@ class _BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _goBack() async {
-    if (!await FlutterServo.goBack()) {
+    if (!await _surfaceController.goBack()) {
       return;
     }
     if (mounted) {
@@ -311,7 +312,7 @@ class _BrowserPageState extends State<BrowserPage> {
   }
 
   Future<void> _goForward() async {
-    if (!await FlutterServo.goForward()) {
+    if (!await _surfaceController.goForward()) {
       return;
     }
     if (mounted) {
@@ -329,7 +330,7 @@ class _BrowserPageState extends State<BrowserPage> {
       });
       return;
     }
-    if (!await FlutterServo.reload()) {
+    if (!await _surfaceController.reload()) {
       return;
     }
     if (mounted) {
@@ -466,6 +467,7 @@ class _BrowserPageState extends State<BrowserPage> {
                   child: Padding(
                     padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                     child: _BrowserViewport(
+                      controller: _surfaceController,
                       content: _content,
                       contentType: _contentType,
                       reloadRevision: _reloadRevision,
@@ -755,6 +757,7 @@ class _BrowserToolbar extends StatelessWidget {
 
 class _BrowserViewport extends StatelessWidget {
   const _BrowserViewport({
+    required this.controller,
     required this.content,
     required this.contentType,
     required this.reloadRevision,
@@ -770,6 +773,7 @@ class _BrowserViewport extends StatelessWidget {
     required this.onRetry,
   });
 
+  final FlutterServoController controller;
   final String content;
   final FlutterServoContentType contentType;
   final int reloadRevision;
@@ -789,6 +793,7 @@ class _BrowserViewport extends StatelessWidget {
     final fallback = _PageLoadingSurface(content: content);
     final surface = contentType == FlutterServoContentType.html
         ? FlutterServoSurface.html(
+            controller: controller,
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,
@@ -800,6 +805,7 @@ class _BrowserViewport extends StatelessWidget {
             enableContextMenu: true,
           )
         : FlutterServoSurface.url(
+            controller: controller,
             content: content,
             fallback: fallback,
             reloadRevision: reloadRevision,

@@ -13,10 +13,10 @@ class MobileWebView extends StatefulWidget {
   final FlutterServoSurface config;
 
   @override
-  State<MobileWebView> createState() => _MobileWebViewState();
+  State<MobileWebView> createState() => MobileWebViewState();
 }
 
-class _MobileWebViewState extends State<MobileWebView> {
+class MobileWebViewState extends State<MobileWebView> {
   WebViewController? _controller;
   bool _ready = false;
   bool _initializing = false;
@@ -67,14 +67,15 @@ class _MobileWebViewState extends State<MobileWebView> {
     if (!mounted || _initializing) return;
     _initializing = true;
     try {
-      if (BackendSession.webview != null) {
+      final legacy = widget.config.controller == null;
+      if (legacy && BackendSession.webview != null) {
         throw StateError(
           'Only one mobile surface is supported by the static navigation API.',
         );
       }
       final controller = WebViewController();
       _controller = controller;
-      BackendSession.webview = controller;
+      if (legacy) BackendSession.webview = controller;
       await controller.setJavaScriptMode(JavaScriptMode.unrestricted);
       if (!mounted) return;
       await controller.setNavigationDelegate(
@@ -106,6 +107,25 @@ class _MobileWebViewState extends State<MobileWebView> {
     } finally {
       _initializing = false;
     }
+  }
+
+  Future<bool> navigate(String command) async {
+    await _loads;
+    final controller = _controller;
+    if (!mounted || !_ready || controller == null) return false;
+    switch (command) {
+      case 'goBack':
+        if (!await controller.canGoBack() || !mounted) return false;
+        await controller.goBack();
+      case 'goForward':
+        if (!await controller.canGoForward() || !mounted) return false;
+        await controller.goForward();
+      case 'reload':
+        await controller.reload();
+      default:
+        return false;
+    }
+    return true;
   }
 
   Future<void> _navigation() async {
@@ -150,6 +170,15 @@ class _MobileWebViewState extends State<MobileWebView> {
   @override
   void didUpdateWidget(MobileWebView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.config.controller != widget.config.controller) {
+      if (widget.config.controller != null &&
+          identical(BackendSession.webview, _controller)) {
+        BackendSession.webview = null;
+      } else if (widget.config.controller == null &&
+          BackendSession.webview == null) {
+        BackendSession.webview = _controller;
+      }
+    }
     if (oldWidget.config.content != widget.config.content ||
         oldWidget.config.contentType != widget.config.contentType ||
         oldWidget.config.reloadRevision != widget.config.reloadRevision) {

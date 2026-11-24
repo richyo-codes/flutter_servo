@@ -127,6 +127,48 @@ void main() {
   });
 
   for (final target in [TargetPlatform.android, TargetPlatform.iOS]) {
+    testWidgets('$target controllers keep WebView navigation separate', (
+      tester,
+    ) async {
+      debugDefaultTargetPlatformOverride = target;
+      addTearDown(() => debugDefaultTargetPlatformOverride = null);
+      final platform = FakeWebView();
+      WebViewPlatform.instance = platform;
+      final first = FlutterServoController();
+      final second = FlutterServoController();
+      Widget surface(FlutterServoController controller, String url) => Expanded(
+        child: FlutterServoSurface.url(
+          controller: controller,
+          content: url,
+          fallback: const SizedBox(),
+        ),
+      );
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Row(
+            children: [
+              surface(first, 'https://example.com/first'),
+              surface(second, 'https://example.com/second'),
+            ],
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(find.byKey(const ValueKey('os-webview')), findsNWidgets(2));
+      final secondView = platform.controller;
+      expect(secondView.url, 'https://example.com/second');
+      expect(await first.reload(), isTrue);
+      expect(secondView.reloads, 0);
+      expect(await second.goBack(), isTrue);
+      expect(secondView.url, 'https://example.com/back');
+      expect(() => second.setZoom(1.5), throwsUnsupportedError);
+      await tester.pumpWidget(const SizedBox.shrink());
+      expect(first.isAttached, isFalse);
+      expect(second.isAttached, isFalse);
+    });
+
     testWidgets('$target uses OS WebView and routes navigation without Servo', (
       tester,
     ) async {

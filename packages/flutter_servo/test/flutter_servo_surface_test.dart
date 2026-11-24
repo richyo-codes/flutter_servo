@@ -42,6 +42,94 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  testServoWidgets('controller routes commands only to its desktop surface', (
+    tester,
+  ) async {
+    final calls = <MethodCall>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+      call,
+    ) async {
+      calls.add(call);
+      return switch (call.method) {
+        'createTexture' || 'resizeTexture' => 1,
+        'goBack' || 'goForward' || 'reload' => true,
+        _ => null,
+      };
+    });
+    final controller = FlutterServoController();
+    final second = FlutterServoController();
+    final showFirst = ValueNotifier(true);
+    addTearDown(showFirst.dispose);
+    final errors = <PlatformException>[];
+    expect(() => controller.loadHtml('detached'), throwsStateError);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Row(
+          children: [
+            Expanded(
+              child: ValueListenableBuilder<bool>(
+                valueListenable: showFirst,
+                builder: (_, visible, child) =>
+                    visible ? child! : const SizedBox(),
+                child: FlutterServoSurface.html(
+                  controller: controller,
+                  content: '<h1>Initial</h1>',
+                  fallback: const SizedBox(),
+                ),
+              ),
+            ),
+            Expanded(
+              child: FlutterServoSurface.html(
+                controller: second,
+                content: '<h1>Second</h1>',
+                fallback: const SizedBox(),
+                onError: errors.add,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(controller.isAttached, isTrue);
+    expect(errors.single.code, 'servo-session-in-use');
+    expect(await second.goBack(), isFalse);
+    expect(() => second.loadHtml('wrong view'), throwsStateError);
+    expect(calls.where((call) => call.method == 'createTexture'), hasLength(1));
+    expect(await controller.goBack(), isTrue);
+    expect(await controller.goForward(), isTrue);
+    expect(await controller.reload(), isTrue);
+    controller.loadUrl(Uri.parse('https://example.org/controller'));
+    controller.setZoom(1.5);
+    await tester.pump();
+    await tester.pump();
+    expect(
+      calls.lastWhere((call) => call.method == 'setUrl').arguments.first,
+      'https://example.org/controller',
+    );
+    expect(
+      calls.lastWhere((call) => call.method == 'resizeTexture').arguments.last,
+      1.5,
+    );
+    controller.loadHtml('<h1>Controller HTML</h1>');
+    await tester.pump();
+    await tester.pump();
+    expect(
+      calls.lastWhere((call) => call.method == 'setHtml').arguments.first,
+      '<h1>Controller HTML</h1>',
+    );
+    showFirst.value = false;
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(controller.isAttached, isFalse);
+    expect(await second.reload(), isTrue);
+    expect(calls.where((call) => call.method == 'createTexture'), hasLength(2));
+    await tester.pumpWidget(const SizedBox.shrink());
+    expect(controller.isAttached, isFalse);
+    expect(second.isAttached, isFalse);
+  });
+
   testServoWidgets(
     'keeps loading UI until a real frame, preserves it during navigation',
     (tester) async {
