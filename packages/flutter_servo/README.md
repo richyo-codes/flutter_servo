@@ -38,6 +38,11 @@ Material host to show page menus. Set `pageZoom` from 0.5 to 3.0 for page
 scaling without reloading. See [backend capabilities](../../docs/backends.md)
 for platform differences.
 
+Pass a `FlutterServoController` to a surface to load URLs or HTML, navigate
+back and forward, reload, or set desktop zoom. Use one controller per
+surface. The desktop native plugin currently supports one mounted surface
+per engine; controlled mobile WebViews can be mounted independently.
+
 ## Precompiled Servo
 
 To skip compiling Servo on Linux or Windows x64, add this to your app's

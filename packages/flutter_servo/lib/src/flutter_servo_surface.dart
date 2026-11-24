@@ -35,22 +35,57 @@ class FlutterServoNavigationState {
   final bool canGoForward;
 }
 
+/// Imperative controls for one mounted [FlutterServoSurface].
+///
+/// Load and zoom requests update the surface on its next build. Use the
+/// surface's progress and error callbacks to observe the result.
+class FlutterServoController {
+  _BackendSurfaceState? _surface;
+
+  bool get isAttached => _surface != null;
+
+  _BackendSurfaceState get _attached =>
+      _surface ?? (throw StateError('FlutterServoController is not attached.'));
+
+  void loadUrl(Uri url) =>
+      _attached._load(FlutterServoContentType.url, url.toString());
+
+  void loadHtml(String html) =>
+      _attached._load(FlutterServoContentType.html, html);
+
+  Future<bool> goBack() => _attached._navigate('goBack');
+
+  Future<bool> goForward() => _attached._navigate('goForward');
+
+  Future<bool> reload() => _attached._navigate('reload');
+
+  /// Set desktop page zoom between 0.5 and 3.0.
+  void setZoom(double zoom) => _attached._setZoom(zoom);
+}
+
 class FlutterServoSurface extends StatefulWidget {
-  FlutterServoSurface._copy(FlutterServoSurface config)
-    : contentType = config.contentType,
-      content = config.content,
-      fallback = config.fallback,
-      enableInputPlumbing = config.enableInputPlumbing,
-      enableContextMenu = config.enableContextMenu,
-      onLoadStateChanged = config.onLoadStateChanged,
-      onLoadProgressChanged = config.onLoadProgressChanged,
-      onNavigationStateChanged = config.onNavigationStateChanged,
-      onWheelZoom = config.onWheelZoom,
-      onError = config.onError,
-      loadTimeout = config.loadTimeout,
-      reloadRevision = config.reloadRevision,
-      pageZoom = config.pageZoom,
-      backend = config.backend;
+  FlutterServoSurface._copy(
+    FlutterServoSurface config, {
+    super.key,
+    FlutterServoContentType? contentTypeOverride,
+    String? contentOverride,
+    int? reloadRevisionOverride,
+    double? zoomOverride,
+  }) : contentType = contentTypeOverride ?? config.contentType,
+       content = contentOverride ?? config.content,
+       fallback = config.fallback,
+       enableInputPlumbing = config.enableInputPlumbing,
+       enableContextMenu = config.enableContextMenu,
+       onLoadStateChanged = config.onLoadStateChanged,
+       onLoadProgressChanged = config.onLoadProgressChanged,
+       onNavigationStateChanged = config.onNavigationStateChanged,
+       onWheelZoom = config.onWheelZoom,
+       onError = config.onError,
+       loadTimeout = config.loadTimeout,
+       reloadRevision = reloadRevisionOverride ?? config.reloadRevision,
+       pageZoom = zoomOverride ?? config.pageZoom,
+       controller = config.controller,
+       backend = config.backend;
 
   const FlutterServoSurface.url({
     super.key,
@@ -66,6 +101,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
     this.pageZoom = 1.0,
+    this.controller,
     this.backend,
   }) : assert(pageZoom >= 0.5 && pageZoom <= 3.0),
        contentType = FlutterServoContentType.url;
@@ -84,6 +120,7 @@ class FlutterServoSurface extends StatefulWidget {
     this.loadTimeout = const Duration(seconds: 30),
     this.reloadRevision = 0,
     this.pageZoom = 1.0,
+    this.controller,
     this.backend,
   }) : assert(pageZoom >= 0.5 && pageZoom <= 3.0),
        contentType = FlutterServoContentType.html;
@@ -110,6 +147,7 @@ class FlutterServoSurface extends StatefulWidget {
 
   /// Desktop Servo page zoom, from 0.5 to 3.0. The OS WebView ignores this.
   final double pageZoom;
+  final FlutterServoController? controller;
   final FlutterServoBackend? backend;
 
   @override
@@ -117,14 +155,123 @@ class FlutterServoSurface extends StatefulWidget {
 }
 
 class _BackendSurfaceState extends State<FlutterServoSurface> {
+  static _BackendSurfaceState? _nativeOwner;
+  static final _waiting = <_BackendSurfaceState>{};
+
+  void _releaseNative() {
+    if (_nativeOwner != this) return;
+    _nativeOwner = null;
+    if (_waiting.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_nativeOwner != null) return;
+      for (final surface in _waiting) {
+        if (surface.mounted) surface.setState(() {});
+      }
+    });
+  }
+  final _nativeKey = GlobalKey<_FlutterServoSurfaceState>();
+  final _mobileKey = GlobalKey<MobileWebViewState>();
   bool _reportedUnsupported = false;
+  FlutterServoBackend? _backend;
+  FlutterServoContentType? _contentType;
+  String? _content;
+  double? _zoom;
+  int _loadRevision = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _attach(widget.controller);
+  }
+
+  void _attach(FlutterServoController? controller) {
+    if (controller == null) return;
+    if (controller._surface != null && controller._surface != this) {
+      throw StateError(
+        'A FlutterServoController can control only one surface.',
+      );
+    }
+    controller._surface = this;
+  }
+
+  void _detach(FlutterServoController? controller) {
+    if (controller?._surface == this) controller!._surface = null;
+  }
+
+  @override
+  void didUpdateWidget(FlutterServoSurface oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.controller != oldWidget.controller) {
+      _attach(widget.controller);
+      _detach(oldWidget.controller);
+      _contentType = null;
+      _content = null;
+      _zoom = null;
+    }
+    if (widget.content != oldWidget.content ||
+        widget.contentType != oldWidget.contentType) {
+      _contentType = null;
+      _content = null;
+    }
+    if (widget.pageZoom != oldWidget.pageZoom) _zoom = null;
+  }
+
+  @override
+  void dispose() {
+    _detach(widget.controller);
+    _waiting.remove(this);
+    _releaseNative();
+    super.dispose();
+  }
+
+  void _load(FlutterServoContentType type, String content) {
+    if (_backend == null) throw StateError('No browser backend is available.');
+    setState(() {
+      _contentType = type;
+      _content = content;
+      _loadRevision++;
+    });
+  }
+
+  void _setZoom(double zoom) {
+    if (_backend != FlutterServoBackend.servo) {
+      throw UnsupportedError('Page zoom requires the desktop Servo backend.');
+    }
+    if (!zoom.isFinite || zoom < 0.5 || zoom > 3.0) {
+      throw ArgumentError.value(zoom, 'zoom', 'Must be between 0.5 and 3.0.');
+    }
+    setState(() => _zoom = zoom);
+  }
+
+  Future<bool> _navigate(String command) async {
+    if (_backend == FlutterServoBackend.webview) {
+      return await _mobileKey.currentState?.navigate(command) ?? false;
+    }
+    final native = _nativeKey.currentState;
+    if (_nativeOwner != this || native?._textureId == null) return false;
+    return await _FlutterServoSurfaceState._channel.invokeMethod<bool>(
+          command,
+        ) ??
+        false;
+  }
 
   @override
   Widget build(BuildContext context) {
     final backend = resolveFlutterServoBackend(
       widget.backend ?? BackendSession.preference,
     );
-    if (backend == null) {
+    final nativeBusy =
+        backend == FlutterServoBackend.servo &&
+        _nativeOwner != null &&
+        _nativeOwner != this;
+    _backend = nativeBusy ? null : backend;
+    if (nativeBusy) {
+      _waiting.add(this);
+    } else {
+      _waiting.remove(this);
+    }
+    if (backend != FlutterServoBackend.servo) _releaseNative();
+    if (backend == null || nativeBusy) {
       if (!_reportedUnsupported) {
         _reportedUnsupported = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -133,8 +280,10 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
           widget.onLoadProgressChanged?.call(FlutterServoLoadProgress.failed);
           widget.onError?.call(
             PlatformException(
-              code: 'unsupported-backend',
-              message: 'The requested browser backend is unavailable on this platform.',
+              code: nativeBusy ? 'servo-session-in-use' : 'unsupported-backend',
+              message: nativeBusy
+                  ? 'Only one desktop Servo surface can be mounted at a time.'
+                  : 'The requested browser backend is unavailable on this platform.',
             ),
           );
         });
@@ -142,14 +291,22 @@ class _BackendSurfaceState extends State<FlutterServoSurface> {
       return widget.fallback;
     }
     _reportedUnsupported = false;
+    final config = FlutterServoSurface._copy(
+      widget,
+      contentTypeOverride: _contentType,
+      contentOverride: _content,
+      reloadRevisionOverride: widget.reloadRevision + _loadRevision,
+      zoomOverride: _zoom,
+    );
+    if (backend == FlutterServoBackend.servo) _nativeOwner = this;
     return backend == FlutterServoBackend.webview
-        ? MobileWebView(config: widget)
-        : _NativeSurface(widget);
+        ? MobileWebView(key: _mobileKey, config: config)
+        : _NativeSurface(config, key: _nativeKey);
   }
 }
 
 class _NativeSurface extends FlutterServoSurface {
-  _NativeSurface(super.config) : super._copy();
+  _NativeSurface(super.config, {super.key}) : super._copy();
 
   @override
   State<FlutterServoSurface> createState() => _FlutterServoSurfaceState();
