@@ -42,6 +42,192 @@ void main() {
         .setMockMethodCallHandler(channel, null);
   });
 
+  testServoWidgets(
+    'blocked redirect remains failed until the host loads a new page',
+    (tester) async {
+      final controller = FlutterServoController();
+      final errors = <PlatformException>[];
+      final progress = <FlutterServoLoadProgress>[];
+      final loads = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        if (call.method == 'createTexture' || call.method == 'resizeTexture') {
+          return 1;
+        }
+        if (call.method == 'setPolicyUrl') {
+          loads.add((call.arguments as List).single as String);
+        }
+        return null;
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FlutterServoSurface.url(
+            controller: controller,
+            content: 'https://display.example/redirect',
+            fallback: const SizedBox(),
+            allowNavigation: (_, _) => true,
+            onError: errors.add,
+            onLoadProgressChanged: progress.add,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await sendProgress(FlutterServoLoadProgress.started.index);
+      await sendControl({'type': 'redirectBlocked'});
+      await sendProgress(FlutterServoLoadProgress.complete.index);
+      expect(errors.single.code, 'redirect-blocked');
+      expect(progress.last, FlutterServoLoadProgress.failed);
+      controller.loadUrl(Uri.parse('https://display.example/direct'));
+      await tester.pump();
+      await tester.pump();
+      expect(loads.last, 'https://display.example/direct');
+      await sendProgress(FlutterServoLoadProgress.started.index);
+      await sendProgress(FlutterServoLoadProgress.complete.index);
+      expect(progress.last, FlutterServoLoadProgress.complete);
+      expect(errors, hasLength(1));
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testServoWidgets(
+    'site clear distinguishes rejected identifiers from missing support',
+    (tester) async {
+      var supportsValidation = true;
+      final operations = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        if (call.method == 'createTexture' || call.method == 'resizeTexture') {
+          return 1;
+        }
+        if (call.method != 'respondToControl') return null;
+        final data = jsonDecode(call.arguments as String) as Map;
+        operations.add(data['type'] as String);
+        return switch (data['type']) {
+          'clearSiteData' => data['site'] == 'example.org',
+          'supportsValidatedSiteClear' => supportsValidation,
+          _ => false,
+        };
+      });
+      final controller = FlutterServoController();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FlutterServoSurface.html(
+            controller: controller,
+            content: '<p>Test</p>',
+            fallback: const SizedBox(),
+          ),
+        ),
+      );
+      await tester.pump();
+      operations.clear();
+      await controller.clearSiteData('example.org');
+      expect(operations, ['clearSiteData']);
+      await expectLater(
+        controller.clearSiteData('https://example.org/path'),
+        throwsArgumentError,
+      );
+      supportsValidation = false;
+      await expectLater(
+        controller.clearSiteData('other.example'),
+        throwsUnsupportedError,
+      );
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testServoWidgets(
+    'a missing desktop policy command never falls back to setUrl',
+    (tester) async {
+      final methods = <String>[];
+      final errors = <PlatformException>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        methods.add(call.method);
+        if (call.method == 'setPolicyUrl') throw MissingPluginException();
+        if (call.method == 'createTexture' || call.method == 'resizeTexture') {
+          return 1;
+        }
+        return null;
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FlutterServoSurface.url(
+            content: 'https://kiosk.example',
+            fallback: const SizedBox(),
+            allowNavigation: (uri, main) => main == true,
+            onError: errors.add,
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(methods, contains('setPolicyUrl'));
+      expect(methods, isNot(contains('setUrl')));
+      expect(errors.first.code, 'unsupported-navigation-policy');
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
+  testServoWidgets(
+    'desktop navigation decisions preserve ID and unknown frame scope',
+    (tester) async {
+      final scopes = <bool?>[];
+      final loads = <String>[];
+      final replies = <Map<String, dynamic>>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (
+        call,
+      ) async {
+        if (call.method == 'createTexture' || call.method == 'resizeTexture') {
+          return 1;
+        }
+        if (call.method == 'setPolicyUrl' || call.method == 'setUrl') {
+          loads.add(call.method);
+        }
+        if (call.method == 'respondToControl') {
+          final data =
+              jsonDecode(call.arguments as String) as Map<String, dynamic>;
+          if (data['type'] == 'navigationDecision') replies.add(data);
+          return true;
+        }
+        return null;
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FlutterServoSurface.url(
+            content: 'https://kiosk.example/start',
+            fallback: const SizedBox(),
+            allowNavigation: (uri, main) {
+              scopes.add(main);
+              if (uri.path == '/broken') throw StateError('host policy failed');
+              return uri.origin == 'https://kiosk.example';
+            },
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      expect(loads, ['setPolicyUrl']);
+      for (final (id, url) in [
+        (41, 'https://kiosk.example/next'),
+        (42, 'https://external.example'),
+        (43, 'https://kiosk.example/broken'),
+      ]) {
+        await sendControl({'type': 'navigationRequest', 'id': id, 'url': url});
+      }
+      expect(scopes, [true, null, null, null]);
+      expect(replies.map((r) => (r['id'], r['allow'])), [
+        (41, true),
+        (42, false),
+        (43, false),
+      ]);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+
   testServoWidgets('controller routes commands only to its desktop surface', (
     tester,
   ) async {
@@ -61,6 +247,7 @@ void main() {
     final showFirst = ValueNotifier(true);
     addTearDown(showFirst.dispose);
     final errors = <PlatformException>[];
+    final popupRecipients = <String>[];
     expect(() => controller.loadHtml('detached'), throwsStateError);
     await tester.pumpWidget(
       MaterialApp(
@@ -73,6 +260,7 @@ void main() {
                     visible ? child! : const SizedBox(),
                 child: FlutterServoSurface.html(
                   controller: controller,
+                  onPopupBlocked: () => popupRecipients.add('first'),
                   content: '<h1>Initial</h1>',
                   fallback: const SizedBox(),
                 ),
@@ -81,6 +269,7 @@ void main() {
             Expanded(
               child: FlutterServoSurface.html(
                 controller: second,
+                onPopupBlocked: () => popupRecipients.add('second'),
                 content: '<h1>Second</h1>',
                 fallback: const SizedBox(),
                 onError: errors.add,
@@ -93,6 +282,8 @@ void main() {
     await tester.pump();
     expect(controller.isAttached, isTrue);
     expect(errors.single.code, 'servo-session-in-use');
+    await sendControl({'type': 'popupBlocked'});
+    expect(popupRecipients, ['first']);
     expect(await second.goBack(), isFalse);
     expect(() => second.loadHtml('wrong view'), throwsStateError);
     expect(calls.where((call) => call.method == 'createTexture'), hasLength(1));

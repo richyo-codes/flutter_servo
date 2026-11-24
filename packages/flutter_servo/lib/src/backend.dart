@@ -1,9 +1,59 @@
 import 'package:flutter/foundation.dart';
-import 'package:webview_flutter/webview_flutter.dart';
 
 enum FlutterServoBackend { auto, servo, webview }
 
+/// Controls implemented by the adapter for a particular target platform.
+/// These describe API availability, not enforcement by an installed binary,
+/// an OS permission grant, or an isolation guarantee.
+enum FlutterServoHostControl {
+  navigationPolicy,
+  title,
+  loadMilestones,
+  estimatedLoadPercent,
+  blockedPopupNotification,
+  clearCookies,
+  clearSiteData,
+  ephemeralLaunch,
+  deniedPermissionNotification,
+  geolocationDecision,
+  uploadPicker,
+  downloadNotification,
+}
+
 extension FlutterServoBackendCapabilities on FlutterServoBackend {
+  Set<FlutterServoHostControl> hostControls({
+    TargetPlatform? platform,
+    bool? isWeb,
+  }) {
+    final target = platform ?? defaultTargetPlatform;
+    final backend = resolveFlutterServoBackend(
+      this,
+      platform: target,
+      isWeb: isWeb,
+    );
+    if (backend == null) return const {};
+    return Set.unmodifiable({
+      FlutterServoHostControl.navigationPolicy,
+      FlutterServoHostControl.title,
+      FlutterServoHostControl.loadMilestones,
+      FlutterServoHostControl.clearCookies,
+      FlutterServoHostControl.deniedPermissionNotification,
+      if (backend == FlutterServoBackend.servo) ...{
+        FlutterServoHostControl.blockedPopupNotification,
+        FlutterServoHostControl.clearSiteData,
+        FlutterServoHostControl.ephemeralLaunch,
+        FlutterServoHostControl.uploadPicker,
+      } else ...{
+        FlutterServoHostControl.estimatedLoadPercent,
+        if (target == TargetPlatform.android) ...{
+          FlutterServoHostControl.geolocationDecision,
+          FlutterServoHostControl.uploadPicker,
+          FlutterServoHostControl.downloadNotification,
+        },
+      },
+    });
+  }
+
   /// Inspect a resolved backend, not [FlutterServoBackend.auto].
   bool get supportsProxyOverrides => this == FlutterServoBackend.servo;
   bool get supportsCustomContextMenus => this == FlutterServoBackend.servo;
@@ -38,5 +88,5 @@ FlutterServoBackend? resolveFlutterServoBackend(
 /// Internal routing for the existing single-surface static navigation API.
 class BackendSession {
   static FlutterServoBackend preference = FlutterServoBackend.auto;
-  static WebViewController? webview;
+  static Future<bool> Function(String)? webview;
 }
