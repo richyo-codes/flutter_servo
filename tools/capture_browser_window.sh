@@ -88,10 +88,10 @@ for ((i=0; i<120; i++)); do
     import -window "$window" "$2/browser.png"
     if [[ -n "$3" ]] || "$5" "$2/browser.png" -depth 8 -format %c histogram:info:- |
         awk '
-          $1 + 0 >= 1500 && /#F64B61/ { grid = 1 }
-          $1 + 0 >= 1500 && /#24D7AE/ { flex = 1 }
-          $1 + 0 >= 1500 && /#F6CC45/ { svg = 1 }
-          END { exit !(grid && flex && svg) }
+          $1 + 0 >= 1500 && /#9FCEC0/ { chart = 1 }
+          $1 + 0 >= 1500 && /#D98F47/ { illustration = 1 }
+          $1 + 0 >= 1500 && /#D5E2D2/ { table = 1 }
+          END { exit !(chart && illustration && table) }
         '; then
       exit 0
     fi

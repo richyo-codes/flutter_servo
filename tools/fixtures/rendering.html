@@ -2,56 +2,97 @@
 <html lang="en">
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Servo Rendering Test</title>
+<title>Harbour Watch | Tide Report</title>
 <style>
   * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: #111c2b;
-    color: #fff8ed;
-    font: 18px/1.5 Georgia, serif;
+  body { margin: 0; background: #f5f1e8; color: #183b37; font: 15px/1.45 "Trebuchet MS", sans-serif; }
+  main { max-width: 1190px; margin: auto; padding: 20px 38px 36px; }
+  header, .chart-head { display: flex; justify-content: space-between; align-items: center; }
+  header { border-bottom: 1px solid #a8b8aa; padding-bottom: 12px; }
+  .label { font: 12px monospace; letter-spacing: .15em; text-transform: uppercase; }
+  h1, h2 { font-family: Georgia, serif; font-weight: normal; margin: 0; }
+  h1 { font-size: clamp(36px, 5vw, 65px); letter-spacing: -.05em; line-height: 1; }
+  h2 { font-size: 25px; }
+  p { margin: 5px 0 0; color: #475f58; }
+  .intro { margin: 21px 0 18px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr); gap: 22px; }
+  article { background: #fffcf4; border-top: 2px solid #183b37; padding: 15px 18px 8px; }
+  .chart-head strong { font: 25px Georgia, serif; }
+  .chart { display: block; width: 100%; height: 215px; margin-top: 4px; }
+  figure { margin: 0; background: #efe5cd; }
+  figure svg { width: 100%; height: 219px; display: block; }
+  figcaption { padding: 11px 15px; }
+  figcaption .label { display: block; margin-bottom: 3px; }
+  section { margin-top: 18px; }
+  table { width: 100%; border-collapse: collapse; text-align: left; margin-top: 7px; font-variant-numeric: tabular-nums; }
+  th, td { padding: 7px 12px; border-bottom: 1px solid #bdc8ba; }
+  thead { background: #d5e2d2; }
+  tbody th { font-weight: 600; }
+  tbody tr:hover { background: #fffcf4; }
+  @media (max-width: 700px) {
+    main { padding: 16px; }
+    .grid { grid-template-columns: 1fr; }
+    th, td { padding: 5px; }
   }
-  main { max-width: 1000px; margin: auto; padding: 48px 32px; }
-  header { border-bottom: 1px solid #607486; padding-bottom: 24px; }
-  h1 { font-size: clamp(36px, 6vw, 72px); line-height: 1; margin: 12px 0; }
-  .label { font: 14px monospace; letter-spacing: .15em; text-transform: uppercase; }
-  .specimens { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; margin-top: 32px; }
-  figure { margin: 0; min-width: 0; }
-  .sample { height: 200px; background: #24364a; overflow: hidden; }
-  .grid { display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); gap: 10px; padding: 20px; }
-  .grid span { grid-area: 1 / 1 / 4 / 3; background: #f64b61; border-radius: 60px 4px 60px 4px; }
-  .grid b { grid-area: 2 / 3 / 4 / 4; background: #fcf0dd; }
-  .flex { display: flex; align-items: center; justify-content: center; gap: 10px; }
-  .flex span { width: 36px; height: 100px; background: #24d7ae; transform: rotate(20deg); }
-  figure:nth-child(3) .sample { background: linear-gradient(145deg, #354e6b, #172230); }
-  svg { display: block; width: 100%; height: 100%; }
-  figcaption { margin-top: 12px; }
-  @media (max-width: 640px) { .specimens { grid-template-columns: 1fr; } }
 </style>
 <main>
   <header>
-    <div class="label">Servo / Rendering test</div>
-    <h1>Layout in color.</h1>
-    <p>Three specimens exercise grid placement, flex alignment, transforms, and vector painting.</p>
+    <strong class="label">Harbour Watch / Field Notes</strong>
+    <span class="label">Atlantic coast &nbsp; / &nbsp; 014</span>
   </header>
-  <section class="specimens" aria-label="Rendering specimens">
-    <figure>
-      <div class="sample grid" aria-hidden="true"><span></span><b></b></div>
-      <figcaption>01 / CSS Grid</figcaption>
-    </figure>
-    <figure>
-      <div class="sample flex" aria-hidden="true"><span></span><span></span><span></span></div>
-      <figcaption>02 / Flexbox &amp; transforms</figcaption>
-    </figure>
-    <figure>
-      <div class="sample">
-        <svg viewBox="0 0 240 200" aria-hidden="true">
-          <circle cx="120" cy="100" r="60" fill="#f6cc45"/>
-          <path d="M20 132 Q120 24 220 132" fill="none" stroke="#fff8ed" stroke-width="6"/>
-        </svg>
+  <div class="intro">
+    <h1>Bay of Fundy Tide Report</h1>
+    <p>Illustrative station readings for Canada's Atlantic coast.</p>
+  </div>
+  <div class="grid">
+    <article>
+      <div class="chart-head">
+        <div><span class="label">Station NB-01</span><h2>Saint John water levels</h2></div>
+        <strong>7.4 m</strong>
       </div>
-      <figcaption>03 / SVG &amp; gradient</figcaption>
+      <svg class="chart" viewBox="0 0 570 205" role="img" aria-label="Two rising and falling tide cycles over 24 hours">
+        <g fill="none" stroke="#d2d9cb">
+          <path d="M42 30H552 M42 76H552 M42 122H552 M42 168H552"/>
+        </g>
+        <path fill="#9fcec0" d="M43 144 C80 140 97 32 153 32 S229 155 282 153 S354 45 408 41 S493 139 550 147 V168H43Z"/>
+        <path fill="none" stroke="#1d6a5e" stroke-width="3" d="M43 144 C80 140 97 32 153 32 S229 155 282 153 S354 45 408 41 S493 139 550 147"/>
+        <circle cx="153" cy="32" r="5" fill="#1d6a5e"/>
+        <g fill="#475f58" font-family="monospace" font-size="12">
+          <text x="10" y="34">8 m</text><text x="10" y="80">6 m</text>
+          <text x="10" y="126">4 m</text><text x="10" y="172">2 m</text>
+          <text x="42" y="191">00:00</text><text x="158" y="191">06:00</text>
+          <text x="275" y="191">12:00</text><text x="391" y="191">18:00</text>
+          <text x="517" y="191">24:00</text>
+        </g>
+      </svg>
+    </article>
+    <figure>
+      <svg viewBox="0 0 400 225" preserveAspectRatio="xMidYMid slice" role="img" aria-label="Illustrated lighthouse on a rocky Atlantic shore">
+        <path fill="#efd9ab" d="M0 0H400V225H0Z"/>
+        <circle cx="286" cy="65" r="37" fill="#d98f47"/>
+        <path fill="#9caa8a" d="M0 107 56 78 99 104 155 80 219 120 280 102 400 122V225H0Z"/>
+        <path fill="#66988a" d="M0 130Q120 114 220 140T400 129V225H0Z"/>
+        <path fill="none" stroke="#d9e4ce" stroke-width="2" d="M160 154q66-11 116 0m-24 15q70-13 123 0m-182 15q50-8 90 0m18 22q40-6 64 0"/>
+        <path fill="#264942" d="M0 160 44 142 82 148 114 166 151 169 188 193 228 225H0Z"/>
+        <path fill="#437066" d="M0 191 46 172 99 182 130 176 169 194 157 206 203 225H0Z"/>
+        <path fill="#fbefcb" d="m60 146 6-61h23l7 64Z"/>
+        <path fill="#a95139" d="m63 114 2-14h26l2 14ZM60 81l17-17 17 17Z"/>
+        <path fill="#233e38" d="M66 81h23v9H66zM75 133h8v15h-8z"/>
+        <path fill="none" stroke="#263e35" stroke-width="1.6" d="M235 48q7-6 14 0 7-6 14 0m59-14q6-5 12 0 6-5 12 0"/>
+      </svg>
+      <figcaption><span class="label">Field illustration</span>Headland light, outer Fundy coast</figcaption>
     </figure>
+  </div>
+  <section aria-labelledby="stations">
+    <h2 id="stations">Station readings</h2>
+    <table>
+      <thead><tr><th scope="col">Station</th><th scope="col">Province</th><th scope="col">High tide</th><th scope="col">Low tide</th><th scope="col">Range</th></tr></thead>
+      <tbody>
+        <tr><th scope="row">Saint John</th><td>New Brunswick</td><td>7.4 m</td><td>1.3 m</td><td>6.1 m</td></tr>
+        <tr><th scope="row">Digby</th><td>Nova Scotia</td><td>8.6 m</td><td>1.6 m</td><td>7.0 m</td></tr>
+        <tr><th scope="row">Burntcoat Head</th><td>Nova Scotia</td><td>13.5 m</td><td>1.2 m</td><td>12.3 m</td></tr>
+      </tbody>
+    </table>
   </section>
 </main>
 </html>
