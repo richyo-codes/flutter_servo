@@ -66,7 +66,7 @@ for offline setup and system requirements.
 The [example browser](packages/flutter_servo/example) is a standalone Flutter
 app that demonstrates navigation, bookmarks, and embedding demos.
 
-![The Flutter Servo example browser displaying a tide chart, harbor illustration, and station readings](docs/screenshots/rendering.png)
+![The Flutter Servo example browser displaying a Space Weather bulletin with a geomagnetic activity chart, aurora illustration, and magnetometer log](docs/screenshots/rendering.png)
 
 Download a browser bundle from **Browser CI** under **Artifacts**. Linux
 offers GTK3 and GTK4 packages, and Windows offers an x64 ZIP.
