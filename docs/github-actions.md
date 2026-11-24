@@ -16,9 +16,16 @@ The GTK3 build uses standard Flutter stable on `ubuntu-latest`. The GTK4 build
 uses the public Flutter GTK4 fork and precompiled engine artifacts:
 
 - Flutter fork revision: `dbffa60d521e3c3a9580b47df00fcd4875d493a8`
+- Flutter fork framework version: `3.51.0-0.0.pre` (CI-local tag on that revision)
 - Prebuilt engine: `89573e968cbf3febdf4f07189cc2bef6cbef830b`
 - FVM: `4.2.0`
 - Runner: Ubuntu 26.04, x86_64
+
+When updating the fork pin, update the framework version and engine artifact
+ID together. The local tag makes Flutter report an explicit framework version
+instead of inferring one from whatever tags the checkout has. The engine ID
+is a download key, not a Git commit; Flutter may warn that its commit date
+is unavailable. CI verifies the framework version and engine ID separately.
 
 Ubuntu 26.04 is a [supported GitHub-hosted runner label](https://docs.github.com/en/actions/how-tos/write-workflows/choose-where-workflows-run/choose-the-runner-for-a-job).
 Some versions of actionlint still require ignoring its unknown-label warning
