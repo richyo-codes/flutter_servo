@@ -144,7 +144,10 @@ jobs:
             bash tools/run_native_session_probe.sh \
             "$GITHUB_WORKSPACE/$bundle/lib/librust_lib_flutter_servo.so" --input-controls
           timeout 45s xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 \
-            python3 tools/test_servo_accessibility.py "$bundle/lib/librust_lib_flutter_servo.so"
+            python3 tools/test_servo_accessibility.py "$bundle/lib/librust_lib_flutter_servo.so" \
+              --navigation-policy --popup --file-picker
+          timeout 120s xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 \
+            python3 tools/test_servo_ephemeral.py "$bundle/lib/librust_lib_flutter_servo.so"
           if [[ "$GTK_VARIANT" == gtk4 ]]; then
             cp .fvm/flutter_sdk/bin/cache/artifacts/engine/linux-x64-release/LICENSE.flutter_gtk.md "$bundle/"
             flutter_provenance="$FLUTTER_GTK4_SHA / $FLUTTER_PREBUILT_ENGINE_VERSION"
