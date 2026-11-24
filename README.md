@@ -1,4 +1,4 @@
-# Flutter Servo Embedder
+# Flutter Servo WebView
 
 [![pub.dev](https://img.shields.io/pub/v/flutter_servo)](https://pub.dev/packages/flutter_servo)
 
