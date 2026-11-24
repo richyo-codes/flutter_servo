@@ -622,7 +622,7 @@ static FlMethodResponse* handle_navigation_command(FlutterServoPlugin* self,
 }
 
 static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
-                                        FlMethodCall* method_call) {
+                                        FlMethodCall* method_call, bool policy) {
   const gchar* url = parse_single_string_arg(method_call);
   if (url == nullptr) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
@@ -631,6 +631,8 @@ static FlMethodResponse* handle_set_url(FlutterServoPlugin* self,
   g_message("flutter_servo: linux plugin setUrl");
   send_load_state_changed(self, 0);
   if (!ensure_session(self) ||
+      (policy && !rust_render_bridge_control_response(self->rust_render_bridge,
+          self->session, R"({"type":"requireNavigationPolicy"})")) ||
       !rust_render_bridge_set_url(self->rust_render_bridge, self->session,
                                   url)) {
     return FL_METHOD_RESPONSE(fl_method_error_response_new(
@@ -850,8 +852,8 @@ static void method_call_cb(FlMethodChannel* channel, FlMethodCall* method_call,
     response = handle_navigation_command(plugin, "forward");
   } else if (strcmp(method, "reload") == 0) {
     response = handle_navigation_command(plugin, "reload");
-  } else if (strcmp(method, "setUrl") == 0) {
-    response = handle_set_url(plugin, method_call);
+  } else if (strcmp(method, "setUrl") == 0 || strcmp(method, "setPolicyUrl") == 0) {
+    response = handle_set_url(plugin, method_call, strcmp(method, "setPolicyUrl") == 0);
   } else if (strcmp(method, "setHtml") == 0) {
     response = handle_set_html(plugin, method_call);
   } else if (strcmp(method, "setProxySettings") == 0) {

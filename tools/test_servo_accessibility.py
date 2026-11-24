@@ -5,6 +5,7 @@ import ctypes
 import json
 from pathlib import Path
 import sys
+import tempfile
 import time
 
 
@@ -40,6 +41,8 @@ def main(library_path):
     take_event = bind("session_take_control_event", pointer, pointer)
     free_event = bind("control_event_free", None, pointer)
     respond = bind("session_control_response", boolean, pointer, string)
+    button = bind("session_notify_mouse_button", boolean, pointer,
+                  ctypes.c_int32, ctypes.c_int32, ctypes.c_uint8, boolean)
 
     session = new(None, None, None)
     if not session:
@@ -49,7 +52,7 @@ def main(library_path):
     def send(**event):
         return respond(session, json.dumps(event).encode())
 
-    def wait_for(predicate, description):
+    def wait_for(predicate, description, event_type="accessibilityTree"):
         deadline = time.monotonic() + 15
         last_nodes = None
         while time.monotonic() < deadline:
@@ -59,8 +62,8 @@ def main(library_path):
                     message = json.loads(ctypes.string_at(event))
                 finally:
                     free_event(event)
-                if message["type"] == "accessibilityTree":
-                    last_nodes = message["nodes"]
+                if event_type is None or message["type"] == event_type:
+                    last_nodes = message["nodes"] if event_type == "accessibilityTree" else message
                     found = predicate(last_nodes)
                     if found is not None:
                         return found
@@ -82,7 +85,25 @@ def main(library_path):
                          and node["label"] == "Launch test" and node["clickable"]), None)
 
         link = wait_for(initial_page, "the heading and link")
+        policy = "--navigation-policy" in sys.argv[2:]
+        if policy:
+            assert send(type="requireNavigationPolicy")
+            assert send(type="accessibilityAction", id=link["id"], action="Click")
+            denied = wait_for(lambda e: e, "first navigation decision", "navigationRequest")
+            assert denied["url"].startswith("data:text/html,")
+            assert send(type="navigationDecision", id=denied["id"], allow=False)
+            assert not send(type="navigationDecision", id=denied["id"], allow=True)
+            assert send(type="accessibilityAction", id=link["id"], action="Click")
+            stalled = wait_for(lambda e: e, "unanswered navigation decision", "navigationRequest")
+            # Simulate a stalled host; no frame pump or control poll during the pause.
+            time.sleep(5.2)
+            assert not send(type="navigationDecision", id=stalled["id"], allow=True)
         assert send(type="accessibilityAction", id=link["id"], action="Click")
+        if policy:
+            allowed = wait_for(lambda e: e, "second navigation decision", "navigationRequest")
+            assert allowed["id"] != denied["id"]
+            assert allowed["id"] != stalled["id"]
+            assert send(type="navigationDecision", id=allowed["id"], allow=True)
         wait_for(lambda nodes: next((node for node in nodes if node["value"] == "Activated"), None),
                  "the destination document after link activation")
         assert not send(type="accessibilityAction", id=link["id"], action="Click")
@@ -90,6 +111,54 @@ def main(library_path):
         wait_for(lambda nodes: True if not nodes else None, "the cleared tree")
         assert not send(type="accessibilityAction", id=link["id"], action="Click")
         print("Servo accessibility heading, action dispatch, and deactivation passed")
+        if "--popup" in sys.argv[2:]:
+            assert send(type="accessibilityEnabled", enabled=True)
+            assert load(session, b"""
+              <button style="position:fixed; inset:0; width:100%;height:100%"
+                onclick="document.title = window.open('about:blank') === null
+                    ? 'popup denied' : 'popup created'">Request popup</button>
+            """)
+            wait_for(lambda nodes: next((n for n in nodes if n["value"] == "Request popup"), None),
+                     "the popup button")
+            assert button(session, 20, 20, 0, True)
+            assert button(session, 20, 20, 0, False)
+            seen = set()
+
+            def popup_result(message):
+                if message["type"] == "popupBlocked":
+                    seen.add("host")
+                if message["type"] == "title":
+                    assert message["title"] != "popup created"
+                    if message["title"] == "popup denied":
+                        seen.add("page")
+                return True if seen == {"host", "page"} else None
+
+            wait_for(popup_result, "blocked popup notification and null window handle", None)
+            print("Servo popup denied in the page and reported to the host")
+        if "--file-picker" not in sys.argv[2:]:
+            return
+        assert send(type="accessibilityEnabled", enabled=True)
+        assert load(session, b"""
+          <input type=file aria-label="Select fixture" style="position:fixed;inset:0;width:100%;height:100%">
+          <script>document.querySelector('input').onchange = async e => {
+            const f = e.target.files[0];
+            document.title = f.name + ':' + await f.text();
+          };</script>
+        """)
+        wait_for(lambda nodes: True if any(n.get("value") == "Choose file" for n in nodes)
+                 else None, "the file input")
+        assert button(session, 20, 20, 0, True)
+        assert button(session, 20, 20, 0, False)
+        picker = wait_for(lambda e: e, "the file picker", "filePicker")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "selected.txt"
+            path.write_text("selected contents", encoding="utf-8")
+            assert not send(type="filePicker", id=picker["id"] + 1, paths=[str(path)])
+            assert send(type="filePicker", id=picker["id"], paths=[str(path)])
+            assert not send(type="filePicker", id=picker["id"], paths=[str(path)])
+            wait_for(lambda e: True if e.get("title") == "selected.txt:selected contents" else None,
+                     "the selected file contents in the page", "title")
+        print("Servo file picker selection and one-use reply passed")
     finally:
         free(session)
 

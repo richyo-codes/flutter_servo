@@ -336,11 +336,17 @@ unsafe fn take_control_event(session: *mut c_void) -> *mut c_char {
         return null_mut();
     };
     let control_event = session
-        .delegate
-        .cursor_update
+        .cookie_clear_done
         .take()
-        .map(|cursor| serde_json::json!({"type": "cursor", "cursor": cursor}).to_string())
-        .or_else(|| session.delegate.controls.borrow_mut().take_event());
+        .map(|id| serde_json::json!({"type":"cookiesCleared","id":id}).to_string())
+        .or_else(|| {
+            session
+                .delegate
+                .cursor_update
+                .take()
+                .map(|cursor| serde_json::json!({"type": "cursor", "cursor": cursor}).to_string())
+                .or_else(|| session.delegate.controls.borrow_mut().take_event())
+        });
     control_event
         .or_else(|| session.delegate.accessibility.borrow_mut().take_event())
         .and_then(|event| std::ffi::CString::new(event).ok())
@@ -375,6 +381,80 @@ unsafe fn control_response(session: *mut c_void, response: *const c_char) -> boo
         return false;
     };
     match value["type"].as_str() {
+        Some("requireNavigationPolicy") => {
+            session.delegate.host_navigation_policy.set(true);
+            true
+        }
+        Some("verifyKioskConfiguration") => {
+            let Some(wanted) = value["origins"].as_array() else {
+                return false;
+            };
+            let Some(actual) = session.delegate.allowed_origins.as_ref() else {
+                return false;
+            };
+            let expected: Option<std::collections::HashSet<_>> = wanted
+                .iter()
+                .map(|item| {
+                    let origin = item.as_str()?;
+                    let parsed = super::parse_origins(origin).ok()?;
+                    if parsed.len() != 1 || origin.contains(',') {
+                        return None;
+                    }
+                    parsed.into_iter().next()
+                })
+                .collect();
+            session.ephemeral_storage
+                && expected.is_some_and(|expected| expected == actual.iter().cloned().collect())
+        }
+        Some("navigationDecision") => value["id"].as_u64().is_some_and(|id| {
+            session
+                .delegate
+                .controls
+                .borrow_mut()
+                .decide_navigation(id, value["allow"].as_bool() == Some(true))
+        }),
+        Some("filePicker") => value["id"].as_u64().is_some_and(|id| {
+            session
+                .delegate
+                .controls
+                .borrow_mut()
+                .respond_picker(id, &value["paths"])
+        }),
+        Some("clearCookiesConfirmed") => {
+            let (Some(servo), Some(id)) = (session.servo.as_ref(), value["id"].as_u64()) else {
+                return false;
+            };
+            if session.cookie_clear_done.get().is_some()
+                || session.cookie_clear_pending.replace(true)
+            {
+                return false;
+            }
+            let pending = session.cookie_clear_pending.clone();
+            let done = session.cookie_clear_done.clone();
+            servo
+                .site_data_manager()
+                .clear_cookies(Some(Box::new(move || {
+                    pending.set(false);
+                    done.set(Some(id));
+                })));
+            true
+        }
+        Some("clearSiteData") => {
+            let (Some(servo), Some(site)) = (session.servo.as_ref(), value["site"].as_str()) else {
+                return false;
+            };
+            if !valid_site_name(site) {
+                return false;
+            }
+            servo.site_data_manager().clear_site_data(
+                &[site],
+                servo::StorageType::Cookies
+                    | servo::StorageType::Local
+                    | servo::StorageType::Session,
+            );
+            true
+        }
+        Some("supportsValidatedSiteClear") => session.servo.is_some(),
         Some("accessibilityEnabled") => {
             let Some(enabled) = value["enabled"].as_bool() else {
                 return false;
@@ -441,6 +521,65 @@ unsafe fn control_response(session: *mut c_void, response: *const c_char) -> boo
             true
         }
         _ => false,
+    }
+}
+
+fn valid_site_name(site: &str) -> bool {
+    let Ok(host) = url::Host::parse(site) else {
+        return false;
+    };
+    if host.to_string() != site {
+        return false;
+    }
+    match host {
+        url::Host::Domain(domain) => {
+            domain.len() <= 253
+                && domain.split('.').all(|label| {
+                    !label.is_empty()
+                        && label.len() <= 63
+                        && !label.starts_with('-')
+                        && !label.ends_with('-')
+                        && label
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+                })
+        }
+        _ => true,
+    }
+}
+
+#[cfg(test)]
+mod site_name_tests {
+    use super::valid_site_name;
+
+    #[test]
+    fn accepts_only_canonical_site_identifiers() {
+        for site in [
+            "example.com",
+            "127.0.0.1",
+            "localhost",
+            "[::1]",
+            "xn--bcher-kva.example",
+        ] {
+            assert!(valid_site_name(site), "{site}");
+        }
+        for site in [
+            "",
+            " ",
+            "EXAMPLE.COM",
+            "https://example.com",
+            "example.com:443",
+            "site.example/path",
+            "example.com.",
+            "*.example.com",
+            "a..b",
+            "-invalid.example",
+            "user@example.com",
+            "127.1",
+            "bad_name",
+        ] {
+            assert!(!valid_site_name(site), "{site}");
+        }
     }
 }
 
