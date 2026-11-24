@@ -125,10 +125,3 @@ jobs:
           path: ${{ env.ARTIFACT_NAME }}.zip
           if-no-files-found: error
           retention-days: 14
-      - uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: windows-build-logs-${{ github.run_id }}
-          path: logs/windows*.log
-          if-no-files-found: ignore
-          retention-days: 14
