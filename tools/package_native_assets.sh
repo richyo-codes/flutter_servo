@@ -16,7 +16,7 @@ destination="${NATIVE_ASSET_DIST:-dist}"
 mkdir -p "$destination"
 
 case "$TARGET" in
-  x86_64-unknown-linux-gnu)
+  x86_64-unknown-linux-gnu|aarch64-unknown-linux-gnu)
     library=librust_lib_flutter_servo.so
     cp "$profile/$library" "$stage/"
     strip --strip-unneeded "$stage/$library"
