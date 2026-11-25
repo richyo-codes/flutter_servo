@@ -6,6 +6,8 @@ on Linux and Windows. Android and iOS use the system WebView.
 
 This is an independent, third-party community package. It is not affiliated
 with or endorsed by the Servo project.
+See [Third-Party Notices](THIRD_PARTY_NOTICES.md) for Servo's license and
+the source revision used by the desktop backend.
 
 ## Why Servo?
 
