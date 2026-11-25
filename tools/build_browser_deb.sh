@@ -31,8 +31,13 @@ case "$variant" in
   gtk4) build_dir=linux-gtk4; gtk_dependency=libgtk-4-1 ;;
   *) echo "Invalid GTK variant: $variant" >&2; exit 2 ;;
 esac
-if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
-  echo "DEB packaging requires an x86_64 Linux host" >&2; exit 1
+case "$(uname -m)" in
+  x86_64) machine=x86_64; flutter_arch=x64; deb_arch=amd64 ;;
+  aarch64) machine=aarch64; flutter_arch=arm64; deb_arch=arm64 ;;
+  *) echo "Unsupported packaging architecture" >&2; exit 1 ;;
+esac
+if [[ "$(uname -s)" != Linux ]]; then
+  echo "DEB packaging requires a Linux host" >&2; exit 1
 fi
 for command_name in dpkg-deb dpkg-shlibdeps patchelf readelf nm ldd sha256sum; do
   command -v "$command_name" >/dev/null || {
@@ -54,7 +59,7 @@ elif [[ "$raw_version" =~ ^([0-9]+\.[0-9]+\.[0-9]+)-([A-Za-z][A-Za-z0-9.+_-]*)$ 
   version="${BASH_REMATCH[1]}~${BASH_REMATCH[2]//_/.}"
 fi
 
-bundle_dir="${bundle_dir:-$repo_dir/packages/flutter_servo/example/build/$build_dir/x64/release/bundle}"
+bundle_dir="${bundle_dir:-$repo_dir/packages/flutter_servo/example/build/$build_dir/$flutter_arch/release/bundle}"
 output_dir="${output_dir:-$repo_dir/build/packages/deb/$variant}"
 mkdir -p "$output_dir"
 output_dir="$(cd "$output_dir" && pwd)"
@@ -69,8 +74,8 @@ stage_browser_bundle "$bundle_dir" "$bundle" "$variant"
 stage_browser_entries "$variant" "$installed_bundle" "$root/usr/bin/$package" \
   "$root/usr/share/applications/ca.richyoung.flutter_servo_browser.$variant.desktop"
 
-printf 'Source: %s\n\nPackage: %s\nArchitecture: amd64\nDescription: Flutter Servo Browser\n' \
-  "$package" "$package" > "$staging/debian/control"
+printf 'Source: %s\n\nPackage: %s\nArchitecture: %s\nDescription: Flutter Servo Browser\n' \
+  "$package" "$package" "$deb_arch" > "$staging/debian/control"
 elf_args=("$bundle/flutter_servo_example" "$bundle"/lib/*.so)
 # The embedded Flutter and Servo libraries are private and have no Debian shlibs records.
 shlibs="$(cd "$staging" && dpkg-shlibdeps -O --ignore-missing-info -l"$bundle/lib" "${elf_args[@]}")"
@@ -81,9 +86,9 @@ if [[ "$shlibs" != shlibs:Depends=* || "$depends" != *"$gtk_dependency"* ]]; the
 fi
 # Surfman opens EGL dynamically, so ELF dependency scanning may miss it.
 if [[ "$depends" != *libegl1* ]]; then depends="libegl1, $depends"; fi
-printf 'Package: %s\nVersion: %s\nSection: web\nPriority: optional\nArchitecture: amd64\nMaintainer: Rich Young <code@richyoung.ca>\nDepends: %s\nDescription: Flutter browser powered by Servo using %s\n' \
-  "$package" "$version" "$depends" "${variant^^}" > "$root/DEBIAN/control"
-artifact="flutter-servo-browser-linux-x86_64-$variant-$raw_version.deb"
+printf 'Package: %s\nVersion: %s\nSection: web\nPriority: optional\nArchitecture: %s\nMaintainer: Rich Young <code@richyoung.ca>\nDepends: %s\nDescription: Flutter browser powered by Servo using %s\n' \
+  "$package" "$version" "$deb_arch" "$depends" "${variant^^}" > "$root/DEBIAN/control"
+artifact="flutter-servo-browser-linux-$machine-$variant-$raw_version.deb"
 dpkg-deb --root-owner-group --build "$root" "$output_dir/$artifact"
 (cd "$output_dir" && sha256sum "$artifact" > "$artifact.sha256")
 echo "Built $output_dir/$artifact"

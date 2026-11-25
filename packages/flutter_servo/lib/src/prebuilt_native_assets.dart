@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 
 enum PrebuiltPlatform {
   linux('linux-x64', ['librust_lib_flutter_servo.so']),
+  linuxArm64('linux-arm64', ['librust_lib_flutter_servo.so']),
   windows('windows-x64', [
     'rust_lib_flutter_servo.dll',
     'libEGL.dll',

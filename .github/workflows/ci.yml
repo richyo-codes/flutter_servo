@@ -24,12 +24,17 @@ jobs:
     with:
       platform: windows-x64
 
+  native-linux-arm64:
+    uses: ./.github/workflows/build-native-assets.yml
+    with:
+      platform: linux-arm64
+
   tests:
     needs: native-linux
     uses: ./.github/workflows/checks.yml
 
   linux:
-    needs: tests
+    needs: [tests, native-linux-arm64]
     uses: ./.github/workflows/build-linux-browser.yml
 
   windows:

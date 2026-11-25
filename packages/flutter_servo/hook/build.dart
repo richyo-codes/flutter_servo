@@ -31,16 +31,12 @@ void main(List<String> args) async {
         );
       }
       final target = input.config.code;
-      if (target.targetArchitecture != Architecture.x64) {
-        throw UnsupportedError(
-          'Prebuilt Servo libraries require an x64 target.',
-        );
-      }
-      final platform = switch (target.targetOS) {
-        OS.linux => PrebuiltPlatform.linux,
-        OS.windows => PrebuiltPlatform.windows,
+      final platform = switch ((target.targetOS, target.targetArchitecture)) {
+        (OS.linux, Architecture.x64) => PrebuiltPlatform.linux,
+        (OS.linux, Architecture.arm64) => PrebuiltPlatform.linuxArm64,
+        (OS.windows, Architecture.x64) => PrebuiltPlatform.windows,
         _ => throw UnsupportedError(
-          'No prebuilt Servo library for ${target.targetOS}.',
+          'No prebuilt Servo library for ${target.targetOS}/${target.targetArchitecture}.',
         ),
       };
       if (prebuiltTag != null) {

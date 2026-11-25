@@ -20,8 +20,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        gtk: [gtk3, gtk4]
-    runs-on: ${{ matrix.gtk == 'gtk4' && 'ubuntu-26.04' || 'ubuntu-latest' }}
+        include:
+          - {gtk: gtk3, arch: x64, machine: x86_64}
+          - {gtk: gtk4, arch: x64, machine: x86_64}
+          - {gtk: gtk3, arch: arm64, machine: aarch64}
+    runs-on: ${{ matrix.gtk == 'gtk4' && 'ubuntu-26.04' || matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 180
     env:
       FLUTTER_GTK4_REPOSITORY: https://github.com/richyo-codes/flutter.git
@@ -31,7 +34,7 @@ jobs:
       FLUTTER_PREBUILT_ENGINE_VERSION: ${{ matrix.gtk == 'gtk4' && '89573e968cbf3febdf4f07189cc2bef6cbef830b' || '' }}
       FLUTTER_STORAGE_BASE_URL: ${{ matrix.gtk == 'gtk4' && 'https://pub-79a02b1963fb4da6b5e4e4816e8b7146.r2.dev' || '' }}
       GTK_VARIANT: ${{ matrix.gtk }}
-      BUNDLE_DIR: packages/flutter_servo/example/build/${{ matrix.gtk == 'gtk4' && 'linux-gtk4' || 'linux' }}/x64/release/bundle
+      BUNDLE_DIR: packages/flutter_servo/example/build/${{ matrix.gtk == 'gtk4' && 'linux-gtk4' || 'linux' }}/${{ matrix.arch }}/release/bundle
     steps:
       - uses: actions/checkout@v6
         with:
@@ -63,6 +66,7 @@ jobs:
         if: matrix.gtk == 'gtk3'
         with:
           channel: stable
+          architecture: ${{ matrix.arch }}
           cache: true
 
       - uses: actions/cache@v5
@@ -115,7 +119,7 @@ jobs:
 
       - uses: actions/download-artifact@v7
         with:
-          name: flutter-servo-native-linux-x64-${{ inputs.checkout_ref || github.sha }}
+          name: flutter-servo-native-linux-${{ matrix.arch }}-${{ inputs.checkout_ref || github.sha }}
           path: .dart_tool/ci-native-download
       - name: Use CI-built Servo library
         run: bash tools/configure_ci_native_assets.sh .dart_tool/ci-native-download
@@ -170,12 +174,12 @@ jobs:
         run: |
           mkdir -p build/packages/bundle
           tar -C "$BUNDLE_DIR" \
-            -czf "build/packages/bundle/flutter-servo-browser-linux-x86_64-$GTK_VARIANT-$ARTIFACT_VERSION.tar.gz" .
+            -czf "build/packages/bundle/flutter-servo-browser-linux-${{ matrix.machine }}-$GTK_VARIANT-$ARTIFACT_VERSION.tar.gz" .
 
       - name: Upload RPM package
         uses: actions/upload-artifact@v6
         with:
-          name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-rpm-${{ env.ARTIFACT_VERSION }}
+          name: flutter-servo-browser-linux-${{ matrix.machine }}-${{ matrix.gtk }}-rpm-${{ env.ARTIFACT_VERSION }}
           path: build/packages/rpm/${{ matrix.gtk }}/
           if-no-files-found: error
           retention-days: 14
@@ -183,7 +187,7 @@ jobs:
       - name: Upload DEB package
         uses: actions/upload-artifact@v6
         with:
-          name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-deb-${{ env.ARTIFACT_VERSION }}
+          name: flutter-servo-browser-linux-${{ matrix.machine }}-${{ matrix.gtk }}-deb-${{ env.ARTIFACT_VERSION }}
           path: build/packages/deb/${{ matrix.gtk }}/
           if-no-files-found: error
           retention-days: 14
@@ -191,7 +195,7 @@ jobs:
       - name: Upload Linux release bundle
         uses: actions/upload-artifact@v6
         with:
-          name: flutter-servo-browser-linux-x86_64-${{ matrix.gtk }}-bundle-${{ env.ARTIFACT_VERSION }}
+          name: flutter-servo-browser-linux-${{ matrix.machine }}-${{ matrix.gtk }}-bundle-${{ env.ARTIFACT_VERSION }}
           path: build/packages/bundle/*.tar.gz
           if-no-files-found: error
           retention-days: 14
