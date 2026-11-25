@@ -11,6 +11,10 @@ example directory. Released bundle and package filenames include
 architecture is `aarch64`. GTK4 remains x64-only in CI pending a matching
 custom Flutter SDK.
 
+The ARM64 browser job checks out an official Flutter release tag. Flutter
+bootstraps the native Dart SDK and Linux engine artifacts from that checkout
+because the Linux release archive does not provide an ARM64 SDK bundle.
+
 The reusable native and Linux browser workflows list the build dependencies.
 Ubuntu-built binaries require a compatible target runtime and are not
 guaranteed to run against a Yocto sysroot. Build Servo against the target
