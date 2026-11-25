@@ -11,7 +11,7 @@ license_id="MIT"
 
 usage() {
   echo "Usage: $0 [--gtk gtk3|gtk4] [--bundle-dir PATH] [--out-dir PATH] [--version VERSION] [--license SPDX-ID]"
-  echo "Package an existing x86_64 Linux release bundle (default: gtk4)."
+  echo "Package an existing Linux release bundle (default: gtk4)."
 }
 while (( $# )); do
   case "$1" in
@@ -36,10 +36,15 @@ case "$variant" in
   gtk4) bundle_dir_default=linux-gtk4 ;;
   *) echo "Invalid GTK variant: $variant" >&2; exit 2 ;;
 esac
-bundle_dir="${bundle_dir:-$repo_dir/packages/flutter_servo/example/build/$bundle_dir_default/x64/release/bundle}"
+case "$(uname -m)" in
+  x86_64) machine=x86_64; flutter_arch=x64 ;;
+  aarch64) machine=aarch64; flutter_arch=arm64 ;;
+  *) echo "Unsupported packaging architecture" >&2; exit 1 ;;
+esac
+bundle_dir="${bundle_dir:-$repo_dir/packages/flutter_servo/example/build/$bundle_dir_default/$flutter_arch/release/bundle}"
 output_dir="${output_dir:-$repo_dir/build/packages/rpm/$variant}"
-if [[ "$(uname -s)" != Linux || "$(uname -m)" != x86_64 ]]; then
-  echo "RPM packaging requires an x86_64 Linux host" >&2; exit 1
+if [[ "$(uname -s)" != Linux ]]; then
+  echo "RPM packaging requires a Linux host" >&2; exit 1
 fi
 for command_name in rpmbuild rpm patchelf readelf nm ldd tar sha256sum; do
   command -v "$command_name" >/dev/null || {
@@ -89,7 +94,7 @@ mapfile -t packages < <(find "$staging_dir/RPMS" -type f -name '*.rpm')
 if (( ${#packages[@]} != 1 )); then
   echo "Expected exactly one browser RPM" >&2; exit 1
 fi
-artifact="$output_dir/flutter-servo-browser-linux-x86_64-$variant-$raw_version.rpm"
+artifact="$output_dir/flutter-servo-browser-linux-$machine-$variant-$raw_version.rpm"
 cp "${packages[0]}" "$artifact"
 (
   cd "$output_dir"

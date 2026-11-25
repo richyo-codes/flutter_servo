@@ -55,6 +55,13 @@ jobs:
       checkout_ref: ${{ needs.validate.outputs.commit }}
       platform: windows-x64
 
+  native-linux-arm64:
+    needs: validate
+    uses: ./.github/workflows/build-native-assets.yml
+    with:
+      checkout_ref: ${{ needs.validate.outputs.commit }}
+      platform: linux-arm64
+
   tests:
     needs: [validate, native-linux]
     uses: ./.github/workflows/checks.yml
@@ -62,7 +69,7 @@ jobs:
       checkout_ref: ${{ needs.validate.outputs.commit }}
 
   linux:
-    needs: [validate, tests]
+    needs: [validate, tests, native-linux-arm64]
     uses: ./.github/workflows/build-linux-browser.yml
     with:
       checkout_ref: ${{ needs.validate.outputs.commit }}
@@ -98,9 +105,11 @@ jobs:
           test "$(gh api "repos/$GH_REPO/commits/$RELEASE_TAG" --jq .sha)" = "$RELEASE_COMMIT"
           shopt -s nullglob
           assets=()
-          for gtk in gtk3 gtk4; do
+          for target in x86_64:gtk3 x86_64:gtk4 aarch64:gtk3; do
+            machine="${target%:*}"
+            gtk="${target#*:}"
             for extension in rpm deb tar.gz; do
-              files=(release-assets/flutter-servo-browser-linux-x86_64-"$gtk"-*."$extension")
+              files=(release-assets/flutter-servo-browser-linux-"$machine"-"$gtk"-*."$extension")
               if (( ${#files[@]} != 1 )); then
                 echo "Expected one $gtk $extension artifact" >&2
                 exit 1
