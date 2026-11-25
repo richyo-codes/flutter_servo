@@ -8,6 +8,8 @@ embedding on Linux and Windows. Android and iOS use the system WebView.
 
 Flutter Servo Embedder is an independent, third-party community project.
 It is not affiliated with or endorsed by the Servo project.
+See [Third-Party Notices](packages/flutter_servo/THIRD_PARTY_NOTICES.md) for
+Servo's license and the source revision we embed.
 
 ## Why Servo?
 
