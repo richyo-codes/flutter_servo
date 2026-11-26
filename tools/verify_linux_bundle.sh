@@ -3,6 +3,14 @@ set -euo pipefail
 
 bundle="${1:?Usage: $0 /path/to/release/bundle [gtk3|gtk4]}"
 variant="${2:-gtk4}"
+machine="$(uname -m)"
+# ldd checks native dependencies, so require the bundle to match this host.
+case "$machine" in
+  x86_64) elf_machine='Advanced Micro Devices X86-64' ;;
+  aarch64) elf_machine='AArch64' ;;
+  *) echo "Unsupported Linux bundle verification architecture: $machine" >&2; exit 2 ;;
+esac
+export LC_ALL=C
 case "$variant" in
   gtk3) engine=libflutter_linux_gtk.so; other_engine=libflutter_linux_gtk4.so; gtk=3; other_gtk=4 ;;
   gtk4) engine=libflutter_linux_gtk4.so; other_engine=libflutter_linux_gtk.so; gtk=4; other_gtk=3 ;;
@@ -29,8 +37,8 @@ fi
 # Check the dlopened Servo library as well as the executable's dependency tree.
 for elf in "$binary" "$bundle"/lib/*.so; do
   header="$(readelf -h "$elf")"
-  if ! grep -q 'Machine:.*Advanced Micro Devices X86-64' <<< "$header"; then
-    echo "Expected an x86_64 ELF: $elf" >&2
+  if ! grep -Eq "^[[:space:]]*Machine:[[:space:]]+$elf_machine[[:space:]]*$" <<< "$header"; then
+    echo "Expected ELF for $machine: $elf" >&2
     exit 1
   fi
   linkage="$(ldd "$elf" 2>&1)"
@@ -49,4 +57,4 @@ if ! grep -q ' flutter_servo_session_new$' <<< "$symbols"; then
   echo "Bundle is missing the native Servo renderer entry point" >&2
   exit 1
 fi
-echo "Verified GTK$gtk x86_64 release bundle: $bundle"
+echo "Verified GTK$gtk $machine release bundle: $bundle"
