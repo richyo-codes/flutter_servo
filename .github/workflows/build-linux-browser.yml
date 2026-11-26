@@ -31,9 +31,6 @@ jobs:
       FLUTTER_GTK4_REPOSITORY: https://github.com/richyo-codes/flutter.git
       FLUTTER_GTK4_SHA: dbffa60d521e3c3a9580b47df00fcd4875d493a8
       FLUTTER_GTK4_VERSION: 3.51.0-0.0.pre
-      # The stock SDK resolver needs Flutter's official releases manifest.
-      FLUTTER_PREBUILT_ENGINE_VERSION: ${{ matrix.gtk == 'gtk4' && '89573e968cbf3febdf4f07189cc2bef6cbef830b' || '' }}
-      FLUTTER_STORAGE_BASE_URL: ${{ matrix.gtk == 'gtk4' && 'https://pub-79a02b1963fb4da6b5e4e4816e8b7146.r2.dev' || '' }}
       GTK_VARIANT: ${{ matrix.gtk }}
       BUNDLE_DIR: packages/flutter_servo/example/build/${{ matrix.gtk == 'gtk4' && 'linux-gtk4' || 'linux' }}/${{ matrix.arch }}/release/bundle
     steps:
@@ -88,6 +85,16 @@ jobs:
         with:
           path: ~/.pub-cache
           key: gtk4-rpm-${{ runner.os }}-${{ env.FLUTTER_GTK4_SHA }}-${{ hashFiles('packages/flutter_servo/example/pubspec.lock') }}
+
+      - name: Configure GTK4 engine storage
+        if: matrix.gtk == 'gtk4'
+        shell: bash
+        run: |
+          # Stock Flutter needs the mirror variable unset, not an empty value.
+          {
+            echo 'FLUTTER_PREBUILT_ENGINE_VERSION=89573e968cbf3febdf4f07189cc2bef6cbef830b'
+            echo 'FLUTTER_STORAGE_BASE_URL=https://pub-79a02b1963fb4da6b5e4e4816e8b7146.r2.dev'
+          } >> "$GITHUB_ENV"
 
       - uses: dart-lang/setup-dart@v1
         if: matrix.gtk == 'gtk4'
