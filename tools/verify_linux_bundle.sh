@@ -37,7 +37,7 @@ fi
 # Check the dlopened Servo library as well as the executable's dependency tree.
 for elf in "$binary" "$bundle"/lib/*.so; do
   header="$(readelf -h "$elf")"
-  if ! grep -Eq "^[[:space:]]*Machine:[[:space:]]+$elf_machine[[:space:]]*$" <<< "$header"; then
+  if ! grep -Eq "^[[:space:]]*Machine:[[:space:]]+${elf_machine}[[:space:]]*$" <<< "$header"; then
     echo "Expected ELF for $machine: $elf" >&2
     exit 1
   fi
