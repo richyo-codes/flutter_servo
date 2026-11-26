@@ -13,7 +13,7 @@ Summary: Flutter browser powered by Servo using @GTK@
 License: @LICENSE@
 URL: https://github.com/richyo-codes/flutter_servo
 Source0: %{name}.tar.gz
-BuildArch: x86_64
+ExclusiveArch: x86_64 aarch64
 Requires: @GTK@
 Requires: libEGL.so.1()(64bit)
 

@@ -20,6 +20,20 @@ def run(*args, **kwargs):
     return subprocess.run(args, text=True, capture_output=True, **kwargs)
 
 
+class BrowserRpmSpecTest(unittest.TestCase):
+    def test_supported_architectures(self):
+        spec = (ROOT / "packaging/rpm/browser.spec.in").read_text()
+        for key, value in (("VERSION", "0.1.0"), ("RELEASE", "1"),
+                           ("LICENSE", "MIT"), ("GTK", "gtk3")):
+            spec = spec.replace(f"@{key}@", value)
+        for arch in ("x86_64", "aarch64"):
+            with self.subTest(arch=arch):
+                result = run("rpmspec", "--target", arch, "-q", "--qf",
+                             "%{ARCH}", "/dev/stdin", input=spec)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertEqual(result.stdout, arch)
+
+
 class BrowserRpmTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

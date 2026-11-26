@@ -88,11 +88,15 @@ tar -C "$staging_dir/SOURCES" -czf "$staging_dir/SOURCES/$package_name.tar.gz" "
 sed -e "s/@VERSION@/$rpm_version/g" -e "s/@RELEASE@/$rpm_release/g" \
   -e "s/@LICENSE@/$license_id/g" -e "s/@GTK@/$variant/g" "$repo_dir/packaging/rpm/browser.spec.in" \
   > "$staging_dir/SPECS/$package_name.spec"
-rpmbuild --define "_topdir $staging_dir" --define "_tmppath $staging_dir" \
+rpmbuild --target "$machine" --define "_topdir $staging_dir" --define "_tmppath $staging_dir" \
   -bb "$staging_dir/SPECS/$package_name.spec"
 mapfile -t packages < <(find "$staging_dir/RPMS" -type f -name '*.rpm')
 if (( ${#packages[@]} != 1 )); then
   echo "Expected exactly one browser RPM" >&2; exit 1
+fi
+package_arch="$(rpm -qp --qf '%{ARCH}' "${packages[0]}")"
+if [[ "$package_arch" != "$machine" ]]; then
+  echo "Expected RPM architecture $machine, got $package_arch" >&2; exit 1
 fi
 artifact="$output_dir/flutter-servo-browser-linux-$machine-$variant-$raw_version.rpm"
 cp "${packages[0]}" "$artifact"
