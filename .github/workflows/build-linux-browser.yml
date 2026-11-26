@@ -75,9 +75,14 @@ jobs:
           sdk="$RUNNER_TEMP/flutter-arm64"
           git clone --depth 1 --branch "$FLUTTER_LINUX_ARM64_VERSION" \
             https://github.com/flutter/flutter.git "$sdk"
-          "$sdk/bin/flutter" --no-version-check --version --machine | \
-            jq -e --arg version "$FLUTTER_LINUX_ARM64_VERSION" '.frameworkVersion == $version'
+          # Bootstrap before requesting JSON so startup messages go to the log.
           "$sdk/bin/flutter" --no-version-check precache --linux
+          version_json="$("$sdk/bin/flutter" --no-version-check --version --machine)"
+          jq -e --arg version "$FLUTTER_LINUX_ARM64_VERSION" \
+            '.frameworkVersion == $version' <<< "$version_json" || {
+              printf 'Unexpected Flutter version output:\n%s\n' "$version_json" >&2
+              exit 1
+            }
           echo "$sdk/bin" >> "$GITHUB_PATH"
 
       - uses: actions/cache@v5
