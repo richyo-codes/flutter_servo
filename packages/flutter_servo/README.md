@@ -58,7 +58,7 @@ To skip compiling Servo on Linux or Windows x64, add this to your app's
 hooks:
   user_defines:
     flutter_servo:
-      prebuilt_native_tag: native-v0.1.2
+      prebuilt_native_tag: native-v0.2.3
 ```
 
 The first build downloads Servo; later builds reuse it. Omit the setting to

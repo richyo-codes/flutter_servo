@@ -1,6 +1,6 @@
 name: flutter_servo
 description: "Flutter package for embedding Servo-backed web content."
-version: 0.1.2
+version: 0.2.0
 repository: https://github.com/richyo-codes/flutter_servo
 issue_tracker: https://github.com/richyo-codes/flutter_servo/issues
 topics:
